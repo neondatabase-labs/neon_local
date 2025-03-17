@@ -11,6 +11,6 @@ To install it locally, you need:
 
 # For docker on Mac
 
-Please change the Virtual Machine Manager. There is a bug with VirtioFS that users 
+Please change the Virtual Machine Manager. There is a bug with VirtioFS (the container might see not the whole file content on its change)
 
 ![How to change the image](img/disc.png)
