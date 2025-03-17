@@ -1,0 +1,22 @@
+global
+    log stdout format raw local0
+    maxconn 4096
+
+defaults
+    log global
+    mode http
+    option httplog
+    timeout connect 5s
+    timeout client 50s
+    timeout server 50s
+    option http-keep-alive
+    option http-server-close
+
+frontend http_front
+    bind *:8080
+    default_backend http_backend
+
+backend http_backend
+    server ws_server1 {host}:443 ssl verify none sni str({host}) check
+    http-request set-header Neon-Connection-String "postgresql://{role}:{password}@{host}/{database}?sslmode=require"
+    http-request set-header Host {host}

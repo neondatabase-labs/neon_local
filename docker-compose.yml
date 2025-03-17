@@ -1,0 +1,21 @@
+services:
+  neon_local_postgres:
+    build: pgbouncer/
+    ports:
+      - "6432:6432"
+    environment: 
+    - NEON_API_KEY=${NEON_API_KEY}
+      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
+    volumes:
+      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
+      - ./.neon.local:/scripts/.neon.local
+  neon_local_http:
+    build: haproxy/
+    ports:
+      - "8080:8080"
+    environment:
+      - NEON_API_KEY=${NEON_API_KEY}
+      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
+    volumes:
+      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
+      - ./.neon.local:/scripts/.neon.local
