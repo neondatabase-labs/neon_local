@@ -1,0 +1,63 @@
+name: Build and Push neon-proxy Image to GHCR
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allows manual execution
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Set up Docker Buildx (for multi-platform builds)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          cache-binary: false
+          install: true  # Ensures buildx is properly set up
+
+      # Enable QEMU for ARM64 builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and Push the multi-arch Docker Image
+      - name: Build and Push neon-proxy Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          file: pgbouncer/Dockerfile  # Path to Dockerfile
+          context: ./pgbouncer  # Build context
+          platforms: linux/amd64,linux/arm64  # Multi-architecture support
+          provenance: false  # Disables provenance metadata for SBOMs
+          push: true  # Push the built image to GHCR
+          pull: true  # Ensure the latest base image is pulled
+          tags: |
+            ghcr.io/neondatabase-labs/neon-local:latest
+            ghcr.io/neondatabase-labs/neon-localy:${{ github.event.pull_request.head.sha || github.sha }}
+          cache-from: type=gha  # Use GitHub Actions cache
+          cache-to: type=gha,mode=max  # Save cache for faster builds
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title="Neon Local Proxy Container"
+            org.opencontainers.image.description="Local proxy for Neon Databases"
+            org.opencontainers.image.revision=${{ github.sha }}
+            
+      # Optionally, log out from GHCR
+      - name: Log out from GHCR
+        run: docker logout ghcr.io
