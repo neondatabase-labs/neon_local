@@ -48,8 +48,8 @@ jobs:
           push: true  # Push the built image to GHCR
           pull: true  # Ensure the latest base image is pulled
           tags: |
-            ghcr.io/neondatabase-labs/neon-local:latest
-            ghcr.io/neondatabase-labs/neon-localy:${{ github.event.pull_request.head.sha || github.sha }}
+            ghcr.io/neondatabase-labs/neon_local:latest
+            ghcr.io/neondatabase-labs/neon_localy:${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha  # Use GitHub Actions cache
           cache-to: type=gha,mode=max  # Save cache for faster builds
           labels: |
