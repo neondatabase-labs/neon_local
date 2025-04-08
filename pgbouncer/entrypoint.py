@@ -7,152 +7,171 @@ import time
 import subprocess
 import threading
 import requests
-
+import signal
+import sys
 
 API_URL = "https://console.neon.tech/api/v2"
 
+shutdown_event = threading.Event()
+config_cv = threading.Condition()
+reload_needed = False
+reload_lock = threading.Lock()
 
-def _prepare_config() -> None:
-    # Get environment variables
-    api_key = os.getenv("NEON_API_KEY")
-    project_id = os.getenv("NEON_PROJECT_ID")
-
-    # Check for required environment variables
-    if not api_key or not project_id:
-        raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set in environment variables.")
-
-    # Load the state file
-    try:
-        with open("/scripts/.neon.local", "r") as file:
-            state = json.load(file)
-            print(f"State: {state}")
-    except:
-        print("No state file found.")
-        state = {}
-
-    # Get the current branch
-    try:
-        with open("/scripts/.git/HEAD", "r") as file:
-            current_branch = file.read().split(":", 1)[1].split("/", 2)[-1].strip()
-            print(f"Current branch: {current_branch}")
-    except:
-        print("No branch found from git file.")
-        current_branch = None
-
-    # Prepare headers
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
-    params = None
-    if current_branch is not None and (params := state.get(current_branch)) is not None:
-        # Ensure that branch still exists
-        try:
-            requests.get(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers).raise_for_status()
-        except:
-            print("No branch found at Neon.")
-            params = None
-
-    if params is None:
-        # Prepare the JSON payload
-        payload = {
-            "endpoints": [{
-                "type": "read_write",
-            }],
-        }
-
-        # Make the POST request
-        response = requests.post(f"{API_URL}/projects/{project_id}/branches", headers=headers, json=payload)
-
-        # Check that branch is created. If it's not, just abort the process
-        response.raise_for_status()
-
-        # Parse the response as JSON
-        json_response = response.json()
-
-        # Extract connection parameters
-        params = json_response["connection_uris"][0]["connection_parameters"]
-        params["branch_id"] = json_response["branch"]["id"]
-
-        if current_branch is not None:
-            state[current_branch] = params
-
-    # Read the template and replace placeholders
-    with open("/scripts/pgbouncer.ini.tmpl", "r") as file:
-        pgbouncer_template = file.read()
-
-    print(f"Params: {params}")
-    # Generate pgbouncer configuration
-    pgbouncer_config = pgbouncer_template.format(**params)
-
-    # Print the generated configuration
-    with open ("/etc/pgbouncer/pgbouncer.ini", "w") as file:
-        file.write(pgbouncer_config)
-
-    # Preserve the state
-    try:
-        with open("/scripts/.neon.local", "w") as file:
-            json.dump(state, file)
-            print(f"New state: {state}")
-    except:
-        print("Failed to write state file.")
-
-
-def _start_pgbouncer() -> subprocess.Popen:
-    _prepare_config()
-    return subprocess.Popen(["/usr/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-
-def _pgbouncer_thread(cv: threading.Condition) -> None:
-    pgbouncer_process = _start_pgbouncer()
-    
-    while True:
-        with cv:
-            cv.wait()
-            print("reloading pgbouncer")
-            pgbouncer_process.kill()
-            pgbouncer_process.wait()
-            pgbouncer_process = _start_pgbouncer()
-
-
-def _calculate_file_hash(file_path: str) -> str:
-    with open(file_path, "rb") as file:
+def calculate_file_hash(path):
+    print('calculate file hash')
+    with open(path, "rb") as file:
         return hashlib.sha256(file.read()).hexdigest()
 
-
-def _inner_main() -> None:
-    cv = threading.Condition()
-
-    pgbouncer_thread = threading.Thread(target=_pgbouncer_thread, args=(cv,))
-    pgbouncer_thread.start()
-
-    file_path = "/scripts/.git/HEAD"
-    last_hash = _calculate_file_hash(file_path)
-
+def watch_file_changes(file_path="/scripts/.git/HEAD"):
+    global reload_needed
+    last_hash = calculate_file_hash(file_path)
     print("Watching for file changes...")
-
-    try:
-        while True:
-            time.sleep(1)  # Check every second
-            current_hash = _calculate_file_hash(file_path)
+    while not shutdown_event.is_set():
+        time.sleep(1)
+        try:
+            current_hash = calculate_file_hash(file_path)
             if current_hash != last_hash:
-                print("File has changed!")
+                print("File changed. Notifying PgBouncer reload.")
                 last_hash = current_hash
-                with cv:
-                    cv.notify()
-    except KeyboardInterrupt:
-        print("Terminating")
-        pgbouncer_thread.kill()
-        pgbouncer_thread.join()
+                with reload_lock:
+                    reload_needed = True
+                with config_cv:
+                    config_cv.notify()
+        except Exception as e:
+            print(f"Error watching file: {e}")
 
+def cleanup(manager):
+    print("Performing cleanup...")
+    shutdown_event.set()
+    with config_cv:
+        config_cv.notify_all()
+    if manager.watcher_thread:
+        manager.watcher_thread.join()
+    print("Cleanup complete.")
 
-def main() -> None:
-    try: 
-        _inner_main()
-    except Exception as e:
-        print(f"Error: {e}")
+class PgBouncerManager:
+    def __init__(self):
+        print('pgbouncer manager init')
+        self.pgbouncer_process: subprocess.Popen | None = None
+        self.watcher_thread: threading.Thread | None = None
 
+    def prepare_config(self) -> None:
+        print('prepare config')
+        api_key = os.getenv("NEON_API_KEY")
+        project_id = os.getenv("NEON_PROJECT_ID")
+        if not api_key or not project_id:
+            raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set in environment variables.")
+
+        try:
+            with open("/scripts/.neon_local/.branches", "r") as file:
+                state = json.load(file)
+        except:
+            print("No state file found.")
+            state = {}
+
+        try:
+            with open("/scripts/.git/HEAD", "r") as file:
+                current_branch = file.read().split(":", 1)[1].split("/", 2)[-1].strip()
+        except:
+            print("No branch found from git file.")
+            current_branch = None
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        params = None
+        if current_branch and (params := state.get(current_branch)) is not None:
+            try:
+                requests.get(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers).raise_for_status()
+            except:
+                print("No branch found at Neon.")
+                params = None
+
+        if params is None:
+            payload = {"endpoints": [{"type": "read_write"}]}
+            response = requests.post(f"{API_URL}/projects/{project_id}/branches", headers=headers, json=payload)
+            response.raise_for_status()
+            json_response = response.json()
+            params = json_response["connection_uris"][0]["connection_parameters"]
+            params["branch_id"] = json_response["branch"]["id"]
+            if current_branch:
+                state[current_branch] = params
+
+        with open("/scripts/pgbouncer.ini.tmpl", "r") as file:
+            pgbouncer_template = file.read()
+
+        pgbouncer_config = pgbouncer_template.format(**params)
+
+        with open("/etc/pgbouncer/pgbouncer.ini", "w") as file:
+            file.write(pgbouncer_config)
+
+        try:
+            with open("/scripts/.neon_local/.branches", "w") as file:
+                json.dump(state, file)
+        except:
+            print("Failed to write state file.")
+
+    def start_pgbouncer(self):
+        print('start pgbouncer')
+        self.prepare_config()
+        log_file = "/var/log/pgbouncer.log"
+        with open(log_file, "a") as log:
+            self.pgbouncer_process = subprocess.Popen([
+                "/usr/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"
+            ], stdout=log, stderr=log)
+
+    def stop_pgbouncer(self):
+        print('stop pgbouncer')
+        if self.pgbouncer_process:
+            print("Stopping PgBouncer...")
+            self.pgbouncer_process.terminate()
+            try:
+                self.pgbouncer_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                print("PgBouncer didn't stop in time. Killing.")
+                self.pgbouncer_process.kill()
+                self.pgbouncer_process.wait()
+            self.pgbouncer_process = None
+
+    def pgbouncer_reloader(self):
+        global reload_needed
+        self.start_pgbouncer()
+        while not shutdown_event.is_set():
+            with config_cv:
+                config_cv.wait(timeout=1)
+                if shutdown_event.is_set():
+                    break
+                with reload_lock:
+                    if not reload_needed:
+                        continue
+                    reload_needed = False
+            print("Reloading PgBouncer...")
+            self.stop_pgbouncer()
+            self.start_pgbouncer()
+        self.stop_pgbouncer()
+
+def main():
+    print("main")
+    manager = PgBouncerManager()
+
+    def handle_signal(signum, frame):
+        print("handle signal")
+        print(f"Received signal {signum}, shutting down...")
+        cleanup(manager)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    reloader_thread = threading.Thread(target=manager.pgbouncer_reloader)
+    manager.watcher_thread = threading.Thread(target=watch_file_changes)
+
+    reloader_thread.start()
+    manager.watcher_thread.start()
+
+    reloader_thread.join()
 
 if __name__ == "__main__":
     main()

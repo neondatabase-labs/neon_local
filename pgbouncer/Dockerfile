@@ -11,7 +11,12 @@ ENV PYTHONUNBUFFERED=1
 
 RUN apk add --no-cache python3 py3-requests
 
+RUN touch /var/log/pgbouncer.log
+RUN chown postgres:postgres /var/log/pgbouncer.log
+RUN chmod 644 /var/log/pgbouncer.log
+
 USER postgres
+
 
 ENTRYPOINT [ "python3", "/scripts/entrypoint.py" ]
 CMD [ "/bin/sh" ]
