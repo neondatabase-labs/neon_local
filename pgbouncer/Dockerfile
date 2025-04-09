@@ -8,6 +8,7 @@ COPY pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
 COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY pgbouncer_manager.py /scripts/app/pgbouncer_manager.py
+COPY neon.py /scripts/app/neon.py
 RUN touch /scripts/app/__init__.py
 
 ENV PYTHONUNBUFFERED=1

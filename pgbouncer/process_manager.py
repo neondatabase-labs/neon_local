@@ -4,9 +4,7 @@ import hashlib
 import time
 import os
 import json
-import requests
-
-API_URL = "https://console.neon.tech/api/v2"
+from app.neon import NeonAPI
 
 class ProcessManager:
     def __init__(self):
@@ -16,6 +14,7 @@ class ProcessManager:
         self.reload_needed = False
         self.watcher_thread = None
         self.reloader_thread = None
+        self.neon = NeonAPI()
 
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
@@ -69,29 +68,7 @@ class ProcessManager:
             print("No current branch found.")
             return
 
-        api_key = os.getenv("NEON_API_KEY")
-        project_id = os.getenv("NEON_PROJECT_ID")
-        if not api_key or not project_id:
-            print("No NEON_API_KEY or NEON_PROJECT_ID set, skipping Neon cleanup.")
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        params = state.get(current_branch)
-        if params:
-            try:
-                requests.get(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers).raise_for_status()
-            except:
-                print("Branch not found at Neon.")
-                params = None
-
-            if params:
-                response = requests.delete(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers)
-                print(response)
-                response.raise_for_status()
-                print(response.json())
-
-        if current_branch in state:
-            print(f"Removing branch state: {state.pop(current_branch)}")
+        state = self.neon.cleanup_branch(state, current_branch)
 
         try:
             with open("/scripts/.neon_local/.branches", "w") as file:

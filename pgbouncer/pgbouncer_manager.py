@@ -2,20 +2,16 @@
 import os
 import json
 import subprocess
-import requests
 from app.process_manager import ProcessManager
+from app.neon import NeonAPI
 
 class PgBouncerManager(ProcessManager):
     def __init__(self):
         super().__init__()
         self.pgbouncer_process = None
+        self.neon_api = NeonAPI()
 
     def prepare_config(self):
-        api_key = os.getenv("NEON_API_KEY")
-        project_id = os.getenv("NEON_PROJECT_ID")
-        if not api_key or not project_id:
-            raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set.")
-
         try:
             with open("/scripts/.neon_local/.branches", "r") as file:
                 state = json.load(file)
@@ -30,28 +26,7 @@ class PgBouncerManager(ProcessManager):
             print("No branch found.")
             current_branch = None
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-
-        params = state.get(current_branch) if current_branch else None
-        if params:
-            try:
-                requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}/branches/{params['branch_id']}", headers=headers).raise_for_status()
-            except:
-                print("No branch found at Neon.")
-                params = None
-
-        if params is None:
-            payload = {"endpoints": [{"type": "read_write"}]}
-            response = requests.post(f"https://console.neon.tech/api/v2/projects/{project_id}/branches", headers=headers, json=payload)
-            response.raise_for_status()
-            json_response = response.json()
-            params = json_response["connection_uris"][0]["connection_parameters"]
-            params["branch_id"] = json_response["branch"]["id"]
-            if current_branch:
-                state[current_branch] = params
+        params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch)
 
         with open("/scripts/app/pgbouncer.ini.tmpl", "r") as file:
             template = file.read()
@@ -62,7 +37,7 @@ class PgBouncerManager(ProcessManager):
 
         try:
             with open("/scripts/.neon_local/.branches", "w") as file:
-                json.dump(state, file)
+                json.dump(updated_state, file)
         except:
             print("Failed to write state file.")
 
