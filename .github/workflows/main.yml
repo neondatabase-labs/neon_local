@@ -83,8 +83,8 @@ jobs:
       - name: Build and Push neon-haproxy Docker Image
         uses: docker/build-push-action@v6
         with:
-          file: haproxy/Dockerfile  # Path to Dockerfile
-          context: ./haproxy  # Build context
+          file: app/haproxy/Dockerfile  # Path to Dockerfile
+          context: ./app/haproxy  # Build context
           platforms: linux/amd64,linux/arm64  # Multi-architecture support
           provenance: false  # Disables provenance metadata for SBOMs
           push: true  # Push the built image to GHCR
