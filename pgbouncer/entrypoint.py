@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import json
 import hashlib
 import os
@@ -12,51 +10,38 @@ import sys
 
 API_URL = "https://console.neon.tech/api/v2"
 
-shutdown_event = threading.Event()
-config_cv = threading.Condition()
-reload_needed = False
-reload_lock = threading.Lock()
-
-def calculate_file_hash(path):
-    print('calculate file hash')
-    with open(path, "rb") as file:
-        return hashlib.sha256(file.read()).hexdigest()
-
-def watch_file_changes(file_path="/scripts/.git/HEAD"):
-    global reload_needed
-    last_hash = calculate_file_hash(file_path)
-    print("Watching for file changes...")
-    while not shutdown_event.is_set():
-        time.sleep(1)
-        try:
-            current_hash = calculate_file_hash(file_path)
-            if current_hash != last_hash:
-                print("File changed. Notifying PgBouncer reload.")
-                last_hash = current_hash
-                with reload_lock:
-                    reload_needed = True
-                with config_cv:
-                    config_cv.notify()
-        except Exception as e:
-            print(f"Error watching file: {e}")
-
-def cleanup(manager):
-    print("Performing cleanup...")
-    shutdown_event.set()
-    with config_cv:
-        config_cv.notify_all()
-    if manager.watcher_thread:
-        manager.watcher_thread.join()
-    print("Cleanup complete.")
 
 class PgBouncerManager:
     def __init__(self):
-        print('pgbouncer manager init')
         self.pgbouncer_process: subprocess.Popen | None = None
         self.watcher_thread: threading.Thread | None = None
+        self.shutdown_event = threading.Event()
+        self.config_cv = threading.Condition()
+        self.reload_needed = False
+        self.reload_lock = threading.Lock()
+
+    def calculate_file_hash(self, path):
+        with open(path, "rb") as file:
+            return hashlib.sha256(file.read()).hexdigest()
+
+    def watch_file_changes(self, file_path="/scripts/.git/HEAD"):
+        last_hash = self.calculate_file_hash(file_path)
+        print("Watching for file changes...")
+        while not self.shutdown_event.is_set():
+            time.sleep(1)
+            try:
+                current_hash = self.calculate_file_hash(file_path)
+                if current_hash != last_hash:
+                    print("File changed. Notifying PgBouncer reload.")
+                    last_hash = current_hash
+                    with self.reload_lock:
+                        self.reload_needed = True
+                    with self.config_cv:
+                        self.config_cv.notify()
+            except Exception as e:
+                print(f"Error watching file: {e}")
 
     def prepare_config(self) -> None:
-        print('prepare config')
         api_key = os.getenv("NEON_API_KEY")
         project_id = os.getenv("NEON_PROJECT_ID")
         if not api_key or not project_id:
@@ -114,7 +99,6 @@ class PgBouncerManager:
             print("Failed to write state file.")
 
     def start_pgbouncer(self):
-        print('start pgbouncer')
         self.prepare_config()
         log_file = "/var/log/pgbouncer.log"
         with open(log_file, "a") as log:
@@ -123,7 +107,6 @@ class PgBouncerManager:
             ], stdout=log, stderr=log)
 
     def stop_pgbouncer(self):
-        print('stop pgbouncer')
         if self.pgbouncer_process:
             print("Stopping PgBouncer...")
             self.pgbouncer_process.terminate()
@@ -136,21 +119,76 @@ class PgBouncerManager:
             self.pgbouncer_process = None
 
     def pgbouncer_reloader(self):
-        global reload_needed
         self.start_pgbouncer()
-        while not shutdown_event.is_set():
-            with config_cv:
-                config_cv.wait(timeout=1)
-                if shutdown_event.is_set():
+        while not self.shutdown_event.is_set():
+            with self.config_cv:
+                self.config_cv.wait(timeout=1)
+                if self.shutdown_event.is_set():
                     break
-                with reload_lock:
-                    if not reload_needed:
+                with self.reload_lock:
+                    if not self.reload_needed:
                         continue
-                    reload_needed = False
+                    self.reload_needed = False
             print("Reloading PgBouncer...")
             self.stop_pgbouncer()
             self.start_pgbouncer()
         self.stop_pgbouncer()
+
+
+def branch_cleanup():
+    try:
+        with open("/scripts/.neon_local/.branches", "r") as file:
+            state = json.load(file)
+    except:
+        print("No state file found.")
+        state = {}
+
+    try:
+        with open("/scripts/.git/HEAD", "r") as file:
+            current_branch = file.read().split(":", 1)[1].split("/", 2)[-1].strip()
+    except:
+        print("No branch found.")
+        current_branch = None
+
+    api_key = os.getenv("NEON_API_KEY")
+    project_id = os.getenv("NEON_PROJECT_ID")
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    
+    params = state.get(current_branch)
+    if current_branch and params:
+        try:
+            requests.get(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers).raise_for_status()
+        except:
+            print("Branch not found at Neon.")
+            params = None
+
+        if params:
+            response = requests.delete(f"{API_URL}/projects/{project_id}/branches/{params['branch_id']}", headers=headers)
+            print(response)
+            response.raise_for_status()
+            print(response.json())
+
+    if current_branch in state:
+        print(f"Removing branch state: {state.pop(current_branch)}")
+
+    try:
+        with open("/scripts/.neon_local/.branches", "w") as file:
+            json.dump(state, file)
+            print(f"Updated state: {state}")
+    except:
+        print("Failed to save updated state.")
+
+
+def cleanup(manager):
+    print("Performing cleanup...")
+    branch_cleanup()
+    manager.shutdown_event.set()
+    with manager.config_cv:
+        manager.config_cv.notify_all()
+    if manager.watcher_thread:
+        manager.watcher_thread.join()
+    print("Cleanup complete.")
+
 
 def main():
     print("main")
@@ -166,12 +204,14 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
 
     reloader_thread = threading.Thread(target=manager.pgbouncer_reloader)
-    manager.watcher_thread = threading.Thread(target=watch_file_changes)
+    manager.watcher_thread = threading.Thread(target=manager.watch_file_changes)
 
     reloader_thread.start()
     manager.watcher_thread.start()
 
     reloader_thread.join()
 
+
 if __name__ == "__main__":
     main()
+
