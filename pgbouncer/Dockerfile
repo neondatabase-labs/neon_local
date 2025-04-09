@@ -4,10 +4,14 @@ USER root
 COPY server.crt /etc/pgbouncer/server.crt
 COPY server.key /etc/pgbouncer/server.key
 COPY userlist.txt /etc/pgbouncer/userlist.txt
-COPY pgbouncer.ini.tmpl /scripts/pgbouncer.ini.tmpl
-COPY entrypoint.py /scripts/entrypoint.py
+COPY pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
+COPY entrypoint.py /scripts/app/entrypoint.py
+COPY process_manager.py /scripts/app/process_manager.py
+COPY pgbouncer_manager.py /scripts/app/pgbouncer_manager.py
+RUN touch /scripts/app/__init__.py
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/scripts
 
 RUN apk add --no-cache python3 py3-requests
 
@@ -17,6 +21,6 @@ RUN chmod 644 /var/log/pgbouncer.log
 
 USER postgres
 
-
-ENTRYPOINT [ "python3", "/scripts/entrypoint.py" ]
-CMD [ "/bin/sh" ]
+ENTRYPOINT []
+WORKDIR /scripts
+CMD ["python", "-m", "app.entrypoint"]
