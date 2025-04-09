@@ -56,33 +56,39 @@ class ProcessManager:
 
     def branch_cleanup(self):
         print("Running branch cleanup...")
-        try:
-            with open("/scripts/.neon_local/.branches", "r") as file:
-                state = json.load(file)
-        except:
-            print("No state file found.")
-            state = {}
-
+        state = self._get_neon_branch()
+        print("State")
+        print(state)
         current_branch = self._get_git_branch()
-        if not current_branch:
-            print("No current branch found.")
-            return
-
+        print(current_branch)
+        print("current_branch")
         state = self.neon.cleanup_branch(state, current_branch)
-
-        try:
-            with open("/scripts/.neon_local/.branches", "w") as file:
-                json.dump(state, file)
-                print(f"Updated state: {state}")
-        except:
-            print("Failed to save updated state.")
+        print("state")
+        print(state)
+        self._write_neon_branch(state)
 
     def _get_git_branch(self):
         try:
-            with open("/scripts/.git/HEAD", "r") as file:
+            with open("/tmp/.git/HEAD", "r") as file:
                 return file.read().split(":", 1)[1].split("/", 2)[-1].strip()
         except:
             return None
+        
+    def _get_neon_branch(self):
+        try:
+            with open("/tmp/.neon_local/.branches", "r") as file:
+                return json.load(file)
+        except:
+            print("No state file found.")
+            return {}
+
+    def _write_neon_branch(self, state):
+        try:
+            os.makedirs("/tmp/.neon_local", exist_ok=True)
+            with open("/tmp/.neon_local/.branches", "w") as file:
+                json.dump(state, file)
+        except:
+            print("Failed to write state file.")
 
     def start_process(self):
         raise NotImplementedError
@@ -95,7 +101,9 @@ class ProcessManager:
         self.start_process()
 
     def cleanup(self):
-        self.branch_cleanup()
+        delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
+        if delete_branch:
+            self.branch_cleanup()
         self.shutdown_event.set()
         with self.config_cv:
             self.config_cv.notify_all()

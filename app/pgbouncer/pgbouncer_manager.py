@@ -12,34 +12,12 @@ class PgBouncerManager(ProcessManager):
         self.neon_api = NeonAPI()
 
     def prepare_config(self):
-        try:
-            with open("/scripts/.neon_local/.branches", "r") as file:
-                state = json.load(file)
-        except:
-            print("No state file found.")
-            state = {}
-
-        try:
-            with open("/scripts/.git/HEAD", "r") as file:
-                current_branch = file.read().split(":", 1)[1].split("/", 2)[-1].strip()
-        except:
-            print("No branch found.")
-            current_branch = None
-
-        params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch)
-
-        with open("/scripts/app/pgbouncer.ini.tmpl", "r") as file:
-            template = file.read()
-
-        config = template.format(**params)
-        with open("/etc/pgbouncer/pgbouncer.ini", "w") as file:
-            file.write(config)
-
-        try:
-            with open("/scripts/.neon_local/.branches", "w") as file:
-                json.dump(updated_state, file)
-        except:
-            print("Failed to write state file.")
+        state = self._get_neon_branch()
+        current_branch = self._get_git_branch()
+        parent = os.getenv("PARENT_BRANCH_ID")
+        params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
+        self._write_pgbouncer_config(params)
+        self._write_neon_branch(updated_state)
 
     def start_process(self):
         self.prepare_config()
@@ -58,3 +36,10 @@ class PgBouncerManager(ProcessManager):
                 self.pgbouncer_process.kill()
                 self.pgbouncer_process.wait()
             self.pgbouncer_process = None
+    
+    def _write_pgbouncer_config(self, params):
+        with open("/scripts/app/pgbouncer.ini.tmpl", "r") as file:
+            template = file.read()
+        config = template.format(**params)
+        with open("/etc/pgbouncer/pgbouncer.ini", "w") as file:
+            file.write(config)

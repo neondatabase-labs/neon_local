@@ -18,7 +18,8 @@ class NeonAPI:
         if not self.api_key or not self.project_id:
             print("No NEON_API_KEY or NEON_PROJECT_ID set, skipping Neon cleanup.")
             return state
-
+        if current_branch is None:
+            current_branch = "None"
         params = state.get(current_branch)
         if params:
             try:
@@ -41,7 +42,7 @@ class NeonAPI:
 
         return state
 
-    def fetch_or_create_branch(self, state, current_branch):
+    def fetch_or_create_branch(self, state, current_branch, parent_branch_id=None):
         if not self.api_key or not self.project_id:
             raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set.")
 
@@ -55,7 +56,10 @@ class NeonAPI:
                 params = None
 
         if params is None:
-            payload = {"endpoints": [{"type": "read_write"}]}
+            if parent_branch_id:
+                payload = {"endpoints": [{"type": "read_write"}], "branch": {"parent_id": parent_branch_id}}
+            else:
+                payload = {"endpoints": [{"type": "read_write"}]}
             response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
                                      headers=self._headers(), json=payload)
             response.raise_for_status()
@@ -64,5 +68,7 @@ class NeonAPI:
             params["branch_id"] = json_response["branch"]["id"]
             if current_branch:
                 state[current_branch] = params
+            else:
+                state['None'] = params
 
         return params, state

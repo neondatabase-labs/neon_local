@@ -2,10 +2,21 @@
 import signal
 import sys
 import threading
+import os
+
 from app.pgbouncer_manager import PgBouncerManager
+from app.haproxy_manager import HAProxyManager 
 
 def main():
-    manager = PgBouncerManager()
+    driver = os.getenv("DRIVER", "postgres").lower()
+
+    if driver == "postgres":
+        manager = PgBouncerManager()
+    elif driver == "serverless":
+        manager = HAProxyManager()
+    else:
+        print("Invalid driver - only 'postgres' and 'serverless' drivers are supported.")
+        sys.exit(1)
 
     def handle_signal(signum, frame):
         print(f"Received signal {signum}, shutting down...")
