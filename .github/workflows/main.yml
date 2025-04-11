@@ -58,49 +58,6 @@ jobs:
             org.opencontainers.image.description="Local proxy for Neon Databases"
             org.opencontainers.image.revision=${{ github.sha }}
       
-      # Build and Push the multi-arch Docker Image for multi-driver proxy
-      - name: Build and Push pgbouncer-only-proxy Docker Image
-        uses: docker/build-push-action@v6
-        with:
-          file: app/pgbouncer/Dockerfile  # Path to Dockerfile
-          context: ./app/pgbouncer  # Build context
-          platforms: linux/amd64,linux/arm64  # Multi-architecture support
-          provenance: false  # Disables provenance metadata for SBOMs
-          push: true  # Push the built image to GHCR
-          pull: true  # Ensure the latest base image is pulled
-          tags: |
-            ghcr.io/neondatabase-labs/neon_local_postgres:latest
-            ghcr.io/neondatabase-labs/neon_local_postgres:${{ github.event.pull_request.head.sha || github.sha }}
-          cache-from: type=gha  # Use GitHub Actions cache
-          cache-to: type=gha,mode=max  # Save cache for faster builds
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.title="Neon Local Proxy Container"
-            org.opencontainers.image.description="Local proxy for Neon Databases"
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      # Build and Push the multi-arch Docker Image for ha-proxy based proxy (for neon serverless driver)
-      - name: Build and Push neon-haproxy Docker Image
-        uses: docker/build-push-action@v6
-        with:
-          file: app/haproxy/Dockerfile  # Path to Dockerfile
-          context: ./app/haproxy  # Build context
-          platforms: linux/amd64,linux/arm64  # Multi-architecture support
-          provenance: false  # Disables provenance metadata for SBOMs
-          push: true  # Push the built image to GHCR
-          pull: true  # Ensure the latest base image is pulled
-          tags: |
-            ghcr.io/neondatabase-labs/neon_local_http:latest
-            ghcr.io/neondatabase-labs/neon_local_http:${{ github.event.pull_request.head.sha || github.sha }}
-          cache-from: type=gha  # Use GitHub Actions cache
-          cache-to: type=gha,mode=max  # Save cache for faster builds
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.title="Neon Local Proxy Container"
-            org.opencontainers.image.description="Local proxy for Neon Databases"
-            org.opencontainers.image.revision=${{ github.sha }}
-
-            
       # Optionally, log out from GHCR
       - name: Log out from GHCR
         run: docker logout ghcr.io

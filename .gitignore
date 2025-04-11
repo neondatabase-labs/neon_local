@@ -1,2 +1,3 @@
 .neon.local
-haproxy/tests/node_modules
+.env
+app/haproxy/tests/node_modules

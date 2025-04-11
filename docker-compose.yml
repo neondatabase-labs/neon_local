@@ -1,25 +1,4 @@
 services:
-  neon_local_postgres:
-    build: app/pgbouncer/
-    ports:
-      - "5432:5432"
-    environment: 
-    - NEON_API_KEY=${NEON_API_KEY}
-      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
-    volumes:
-      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
-      - ./.neon.local:/scripts/.neon.local
-  neon_local_http:
-    build: app/haproxy/
-    ports:
-      - "8080:8080"
-    environment:
-      NEON_API_KEY: ${NEON_API_KEY}
-      NEON_PROJECT_ID: tight-thunder-69236509
-    volumes:
-      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
-      - ./.neon.local:/scripts/.neon.local
-
   neon_local:
     build: app/
     ports:
@@ -27,9 +6,10 @@ services:
     environment:
       NEON_API_KEY: ${NEON_API_KEY}
       NEON_PROJECT_ID: ${NEON_PROJECT_ID}
-      #DELETE_BRANCH: True
       #PARENT_BRANCH_ID: ${NEON_PARENT_BRANCH_ID}
+      #DELETE_BRANCH: True
       #DRIVER: postgres
+      DRIVER: serverless
     #volumes:
     #  - ./.neon_local/:/tmp/.neon_local
-    #  - ./.git/HEAD:/tmp/.git/HEAD:ro,consistent
+    #  - ../.git/HEAD:/tmp/.git/HEAD:ro,consistent
