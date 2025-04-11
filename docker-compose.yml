@@ -1,21 +1,15 @@
 services:
-  neon_local_postgres:
-    build: pgbouncer/
+  neon_local:
+    build: app/
     ports:
-      - "6432:6432"
-    environment: 
-    - NEON_API_KEY=${NEON_API_KEY}
-      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
-    volumes:
-      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
-      - ./.neon.local:/scripts/.neon.local
-  neon_local_http:
-    build: haproxy/
-    ports:
-      - "8080:8080"
+      - "5432:5432"
     environment:
-      - NEON_API_KEY=${NEON_API_KEY}
-      - NEON_PROJECT_ID=${NEON_PROJECT_ID}
-    volumes:
-      - ./.git/HEAD:/scripts/.git/HEAD:ro,consistent
-      - ./.neon.local:/scripts/.neon.local
+      NEON_API_KEY: ${NEON_API_KEY}
+      NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+      #PARENT_BRANCH_ID: ${NEON_PARENT_BRANCH_ID}
+      #DELETE_BRANCH: True
+      #DRIVER: postgres
+      DRIVER: serverless
+    #volumes:
+    #  - ./.neon_local/:/tmp/.neon_local
+    #  - ../.git/HEAD:/tmp/.git/HEAD:ro,consistent
