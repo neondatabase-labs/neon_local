@@ -72,7 +72,7 @@ And for the docker compose example it would look like:
 
 ## Environment variables and additional settings
 
-### Neon API key (required)
+### NEON_API_KEY (required)
 A Neon API key is required by the Neon Local container to enable the container to create and delete Neon branches and proxy your apps queries to your Neon database. Instructions to generate a Neon API key can be found at <https://neon.tech/docs/manage/api-keys>. Once you have created your API key, it can be configured with the `NEON_API_KEY` environment variable.
 
 ### NEON_PROJECT_ID (required)
@@ -81,13 +81,13 @@ The Neon Local container also requires you to define which Neon project you wish
 ### DRIVER
 The Neon Local container supports both the postgres driver and the Neon serverless driver and can be configured using the `DRIVER` environment variable. Valid values are `postgres` and `serverless`. By default if no driver is defined, the container will use the postges driver.
 
-### Setting Parent branch
+### PARENT_BRANCH_ID
 By default the Neon Local container will create a child of your project's default branch. If you wish to set a different parent you can do so by setting the `PARENT_BRANCH_ID` environment variable on the container to the desired branches `branch_id`.
 
-### Disabling automatic branch deletion
+### DELETE_BRANCH
 By default the Neon Local container will automatically delete any created branch when the container stops. If you wish to disable automatic branch deletion, you can configure it with the `DELETE_BRANCH` environment variable by setting it to `false`. 
 
-### Persistent b Neon branches per Git branch 
+### Persistent Neon branch per Git branch 
 If you wish for the Neon Local container to create a single branch tied to your git branches, you can provide to volume mounts to your Neon local container to access your current branch name and to persist Neon branch metadata in your project. 
 
 ``` 
@@ -104,7 +104,7 @@ If you wish for the Neon Local container to create a single branch tied to your 
 ```
 Note: this will automatically create a .neon_local folder in your project to save branch metadata to. You will want to add this file to your .gitignore file to prevent database connection information from being saved in git. 
 
-### Git integration using docker on Mac
+#### Git integration using docker on Mac
 If using Docker Desktop for Mac, ensure that your Virtual Machine settings in Docker Desktop are set to gRPC FUSE, not VirtioFS to ensure that Neon Local can detect git branch changes. There is currently a bug with VirtioFS which can prevent containers from being properly updated when local files change while the container is running.  
 
 ![How to change the image](img/disc.png)
