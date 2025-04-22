@@ -96,7 +96,10 @@ jobs:
           TOKEN=$(curl -s -H "Content-Type: application/json" \
             -X POST -d "{\"username\": \"${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}\", \"password\": \"${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}\"}" \
             https://hub.docker.com/v2/users/login/ | jq -r .token)
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+          echo "token=$TOKEN" >> $GITHUB_ENV         # Optional for inline use
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT      # this makes it usable in the next step as an output
+
 
       - name: Update Docker Hub description
         run: |
@@ -104,3 +107,4 @@ jobs:
             -H "Authorization: JWT ${{ steps.dockerhub_login.outputs.token }}" \
             -H "Content-Type: application/json" \
             --data "@encoded-readme.json"
+
