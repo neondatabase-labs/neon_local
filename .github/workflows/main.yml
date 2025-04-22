@@ -78,11 +78,11 @@ jobs:
             neondatabase/neon_local:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
 
-      - name: Read README content
+      - name: Read and encode README
         id: readme
         run: |
-          README_CONTENT=$(cat README.md | jq -Rs .)
-          echo "readme=${README_CONTENT}" >> $GITHUB_OUTPUT
+          ENCODED=$(jq -Rs . < README.md)
+          echo "readme=$ENCODED" >> $GITHUB_OUTPUT
 
       - name: Get Docker Hub token
         id: dockerhub_login
@@ -92,10 +92,11 @@ jobs:
             https://hub.docker.com/v2/users/login/ | jq -r .token)
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Update Docker Hub description
+      - name: Update Docker Hub
         run: |
           curl -s -X PATCH https://hub.docker.com/v2/repositories/neondatabase/neon_local/ \
-            -H "Content-Type: application/json" \
             -H "Authorization: JWT ${{ steps.dockerhub_login.outputs.token }}" \
+            -H "Content-Type: application/json" \
             -d "{\"full_description\": ${{ steps.readme.outputs.readme }}}"
+
 
