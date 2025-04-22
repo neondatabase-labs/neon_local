@@ -73,13 +73,29 @@ jobs:
         with:
           context: ./app
           push: true
-          tags: neondatabase/neon_local:latest
+          tags: |
+            neondatabase/neon_local:latest
+            neondatabase/neon_local:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
 
+      - name: Read README content
+        id: readme
+        run: |
+          README_CONTENT=$(cat README.md | jq -Rs .)
+          echo "readme=${README_CONTENT}" >> $GITHUB_OUTPUT
+
+      - name: Get Docker Hub token
+        id: dockerhub_login
+        run: |
+          TOKEN=$(curl -s -H "Content-Type: application/json" \
+            -X POST -d '{"username": "${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}", "password": "${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}"}' \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
       - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v3
-        with:
-          username: ${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}
-          password: ${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}
-          repository: neondatabase/neon_local
-          readme-filepath: ./README.md
+        run: |
+          curl -s -X PATCH https://hub.docker.com/v2/repositories/neondatabase/neon_local/ \
+            -H "Content-Type: application/json" \
+            -H "Authorization: JWT ${{ steps.dockerhub_login.outputs.token }}" \
+            -d "{\"full_description\": ${{ steps.readme.outputs.readme }}}"
+
