@@ -7,9 +7,8 @@ services:
       NEON_API_KEY: ${NEON_API_KEY}
       NEON_PROJECT_ID: ${NEON_PROJECT_ID}
       #PARENT_BRANCH_ID: ${NEON_PARENT_BRANCH_ID}
-      #DELETE_BRANCH: True
-      #DRIVER: postgres
-      DRIVER: serverless
+      #DELETE_BRANCH: < True | False >
+      #DRIVER: < postgres | serverless >
     #volumes:
     #  - ./.neon_local/:/tmp/.neon_local
     #  - ../.git/HEAD:/tmp/.git/HEAD:ro,consistent

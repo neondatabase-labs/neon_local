@@ -13,7 +13,7 @@ defaults
     option http-server-close
 
 frontend http_front
-    bind *:8080
+    bind *:5432
     default_backend http_backend
 
 backend http_backend
