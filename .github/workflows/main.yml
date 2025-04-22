@@ -92,13 +92,18 @@ jobs:
 
       - name: Get Docker Hub token
         id: dockerhub_login
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}
+          DOCKERHUB_PASSWORD: ${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}
         run: |
           TOKEN=$(curl -s -H "Content-Type: application/json" \
-            -X POST -d "{\"username\": \"${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}\", \"password\": \"${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}\"}" \
+            -X POST -d "{\"username\": \"${DOCKERHUB_USERNAME}\", \"password\": \"${DOCKERHUB_PASSWORD}\"}" \
             https://hub.docker.com/v2/users/login/ | jq -r .token)
 
-          echo "token=$TOKEN" >> $GITHUB_ENV         # Optional for inline use
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT      # this makes it usable in the next step as an output
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+          echo "Docker token length: ${#{{ steps.dockerhub_login.outputs.token }}}"
+
+
 
 
       - name: Update Docker Hub description
