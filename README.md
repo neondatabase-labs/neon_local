@@ -1,16 +1,16 @@
 # Neon Local
 
-## Whats Neon_local?
-Neon_local is a local proxy for your Neon database that allows you to easily connect and switch between Neon database branches as if it were a locally running postgres container. This means that you no longer need to manually update connection string env variables and pass them to your app everytime you switch Neon branches. Your app can be configured as if it were communicating with a local postgres container, and the Neon_local container will handle all routing and authentication for you.  
+## Whats Neon local?
+Neon Local is a local proxy for your Neon database that allows you to easily connect and switch between Neon database branches as if it were a locally running postgres container. This means that you no longer need to manually update connection string environment variables and pass them to your app everytime you switch Neon branches. Your app can be configured as if it were communicating with a local postgres container, and the Neon Local container will handle all routing and authentication for you.  
 
 ## Ephemeral database branches for dev and test
-By default, the Neon local container will automatically create a new ephemeral branch of your database to develop and test against when the container starts that will persist until the container is stopped. This ensure that each time you deploy your app via Docker Compose, you have a clean copy of your database, without the need to manually clean up branches via the CLI or orchestrate anything via make or similar tools. Your database branch lifecycle is tied directly to the life of your compose app.
+By default, the Neon Local container will automatically create a new ephemeral branch of your database to develop and test against when the container starts that will persist until the container is stopped. This ensure that each time you deploy your app via Docker Compose, you have a clean copy of your database, without the need to manually clean up branches via the CLI or orchestrate anything via make or similar tools. Your database branch lifecycle is tied directly to the life of your compose app.
 
 ## Persistent database per Git branch for dev test
-If you would prefer to have your Neon branches persist between test runs you can also disable the auto-deletion of branches on container stop, and provide a mount to your projects git file to ensure that the container will automatically create new Neon database branches for every new Git branch you work on. 
+If you would prefer to have your Neon branches persist between test runs you can also disable the auto-deletion of branches on container stop, and provide a mount to your project's git file to ensure that the container will automatically create new Neon database branches for every new Git branch you work on. 
 
 ## Personal copies of your staging database for CI testing and Preview environments
-Using the Neon local container in your CI pipeline allows you to instantly create and connect to copies of your staging or test database with a simple compose up command. No need for additional automation like Github actions required. 
+Using the Neon Local container in your CI pipeline allows you to instantly create and connect to copies of your staging or test database with a simple compose up command. No need for additional automation like Github actions required. 
 
 ## Docker run instructions
 You can run the Neon Local container with the following docker run command
@@ -45,16 +45,16 @@ To connect your app to the Neon Local container via the postgres driver, you nee
 
 ``` "postgres://neon:npg@localhost:5432/<database_name>" ```
 
-and in the docker compose example above the app's connection string to connect would look like:
+and in the docker compose example above, the app's connection string to connect would look like:
 
 ``` "postgres://neon:npg@db:5432/<database_name>" ```
 
 (as the containers service name in the compose file is `db`)
 
-No other changes should be necessary to your app, except ensuring you currently do not have your `sslmode` is NOT set to `disable` on your database connection. Neon databases require your app to use ssl to communicate.
+No other changes should be necessary to your app, except ensuring you currently do not have your `sslmode` is set to `disable` on your database connection as Neon databases require your app to use ssl to communicate.
  
 ## Connection your app (Neon serverless driver)
-To connect your app to the Neon Local container via the Neon serverless driver you must provide the Neon Local connection string to your app in the same way as the postgres driver. You also need to ensure that the NeonConfig.fetchEndpoint is properly configured to also point to your Neon Local container. So with the docker run example above this would lokk like:
+To connect your app to the Neon Local container via the Neon serverless driver you must provide the Neon Local connection string to your app in the same way as the postgres driver. You also need to ensure that the `NeonConfig.fetchEndpoint` is properly configured to also point to your Neon Local container. So with the docker run example above this would lokk like:
 
 ```
     import { neon, neonConfig } from "@neondatabase/serverless";
@@ -76,7 +76,7 @@ And for the docker compose example it would look like:
 A Neon API key is required by the Neon Local container to enable the container to create and delete Neon branches and proxy your apps queries to your Neon database. Instructions to generate a Neon API key can be found at <https://neon.tech/docs/manage/api-keys>. Once you have created your API key, it can be configured with the `NEON_API_KEY` environment variable.
 
 ### NEON_PROJECT_ID (required)
-The Neon Local container also requires you to define which Neon project you wish to connect to via the `NEON_PROJECT_ID` environment variable. Your project's id can be found by navigating to the Settings> General page of your project at <https://neon.tech>.
+The Neon Local container also requires you to define which Neon project you wish to connect to via the `NEON_PROJECT_ID` environment variable. Your project's id can be found by navigating to the Settings > General page of your project at <https://neon.tech>.
 
 ### DRIVER
 The Neon Local container supports both the postgres driver and the Neon serverless driver and can be configured using the `DRIVER` environment variable. Valid values are `postgres` and `serverless`. By default if no driver is defined, the container will use the postges driver.
@@ -88,7 +88,7 @@ By default the Neon Local container will create a child of your project's defaul
 By default the Neon Local container will automatically delete any created branch when the container stops. If you wish to disable automatic branch deletion, you can configure it with the `DELETE_BRANCH` environment variable by setting it to `false`. 
 
 ### Persistent Neon branch per Git branch 
-If you wish for the Neon Local container to create a single branch tied to your git branches, you can provide to volume mounts to your Neon local container to access your current branch name and to persist Neon branch metadata in your project. 
+If you wish for the Neon Local container to create a single branch tied to your git branches, you can provide two volume mounts to your Neon local container to access your projects current git branch's name and to persist Neon branch metadata in your project. 
 
 ``` 
     db:
