@@ -86,27 +86,3 @@ jobs:
             neondatabase/neon_local:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
 
-      - name: Encode README content
-        id: readme
-        run: jq -Rs . < README.md > encoded-readme.json
-
-      - name: Get Docker Hub token
-        id: dockerhub_login
-        env:
-          DOCKERHUB_USERNAME: ${{ vars.NEON_LOCAL_DOCKERHUB_USERNAME }}
-          DOCKERHUB_PASSWORD: ${{ secrets.NEON_LOCAL_DOCKERHUB_PASSWORD }}
-        run: |
-          TOKEN=$(curl -s -H "Content-Type: application/json" \
-            -X POST -d "{\"identifier\": \"${DOCKERHUB_USERNAME}\", \"secret\": \"${DOCKERHUB_PASSWORD}\"}" \
-            https://hub.docker.com/v2/auth/token/ | jq -r .token)
-
-          echo "Token length: ${#TOKEN}" 
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
-
-      - name: Update Docker Hub description
-        run: |
-          curl -s -X PATCH https://hub.docker.com/v2/repositories/neondatabase/neon_local/ \
-            -H "Authorization: Bearer ${{ steps.dockerhub_login.outputs.token }}" \
-            -H "Content-Type: application/json" \
-            --data "@encoded-readme.json"
-

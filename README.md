@@ -43,11 +43,11 @@ The Neon Local container supports communicating with your Neon database via both
 ## Connecting your app (postgres driver)
 To connect your app to the Neon Local container via the postgres driver, you need to provide your app a connection sting pointing to the Neon Local container with the following credentials (role: neon, password: npg). That means for the docker run example above the app's connection string to connect would look like:
 
-``` "postgres://neon:npg@localhost:5432/<database_name>" ```
+``` "postgres://neon:npg@localhost:5432/<database_name>?sslmode=require" ```
 
 and in the docker compose example above, the app's connection string to connect would look like:
 
-``` "postgres://neon:npg@db:5432/<database_name>" ```
+``` "postgres://neon:npg@db:5432/<database_name>?sslmode=require" ```
 
 (as the containers service name in the compose file is `db`)
 
@@ -58,7 +58,7 @@ To connect your app to the Neon Local container via the Neon serverless driver y
 
 ```
     import { neon, neonConfig } from "@neondatabase/serverless";
-    const sql = neon("postgres://neon:npg@localhost:5432/<database_name>");
+    const sql = neon("postgres://neon:npg@localhost:5432/<database_name>?sslmode=no-verify");
     neonConfig.fetchEndpoint = 'http://localhost:5432/sql'
 ```
 
@@ -66,9 +66,33 @@ And for the docker compose example it would look like:
 
 ```
     import { neon, neonConfig } from "@neondatabase/serverless";
-    const sql = neon("postgres://neon:npg@db:5432/<database_name>");
+    const sql = neon("postgres://neon:npg@db:5432/<database_name>")?sslmode=no-verify;
     neonConfig.fetchEndpoint = 'http://db:5432/sql'
 ```
+
+You will also need to add the `DRIVER: serverless` environment variable to your Docker run command or compose command to allow your app to communicate with the the Neon Local container using the Neon serverless driver like this:
+
+``` 
+    $ docker run \
+        -name db
+        -p 5432:5432
+        -e NEON_API_KEY: <your_neon_api_key>
+        -e NEON_PROJECT_ID: <your_neon_project_key>
+        -e DRIVER: serverless
+        neondatabase/neon_local:latest
+```
+
+``` 
+    db:
+        image: neondatabase/neon_local:latest
+        ports:
+            - "5432:5432"
+        environment:
+            NEON_API_KEY: ${NEON_API_KEY}
+            NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+            DRIVER: serverless
+```
+
 
 ## Environment variables and additional settings
 
