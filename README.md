@@ -17,10 +17,10 @@ You can run the Neon Local container with the following docker run command
 
 ``` 
     $ docker run \
-        -name db
+        --name db
         -p 5432:5432
-        -e NEON_API_KEY: <your_neon_api_key>
-        -e NEON_PROJECT_ID: <your_neon_project_key>
+        -e NEON_API_KEY=<your_neon_api_key>
+        -e NEON_PROJECT_ID=<your_neon_project_key>
         neondatabase/neon_local:latest
 ```
 
@@ -74,11 +74,11 @@ You will also need to add the `DRIVER: serverless` environment variable to your 
 
 ``` 
     $ docker run \
-        -name db
+        --name db
         -p 5432:5432
-        -e NEON_API_KEY: <your_neon_api_key>
-        -e NEON_PROJECT_ID: <your_neon_project_key>
-        -e DRIVER: serverless
+        -e NEON_API_KEY=<your_neon_api_key>
+        -e NEON_PROJECT_ID=<your_neon_project_key>
+        -e DRIVER=serverless
         neondatabase/neon_local:latest
 ```
 
