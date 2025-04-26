@@ -23,20 +23,26 @@ class NeonAPI:
         if not branch_id:
             raise ValueError("BRANCH_ID not set.")
         
-        # First get the branch details to get the endpoint_id
-        endpoint_url = f"{API_URL}/projects/{project_id}/endpoints"
-        endpoint_response = requests.get(endpoint_url, headers=self._headers())
-        endpoint_response.raise_for_status()
-        endpoint_json = endpoint_response.json()
-        
-        if len(endpoint_json["endpoints"]) == 0:
-            raise ValueError("No endpoints found for the branch")
-        else:
+        try:
+            endpoint_url = f"{API_URL}/projects/{project_id}/endpoints"
+            endpoint_response = requests.get(endpoint_url, headers=self._headers())
+            endpoint_response.raise_for_status()
+            endpoint_json = endpoint_response.json()
+            
+            if not endpoint_json.get("endpoints"):
+                raise ValueError("No endpoints found for the branch")
+            
+            # Find the first read_write endpoint for the branch
             for endpoint in endpoint_json["endpoints"]:
-                if endpoint["branch_id"] == branch_id and endpoint["type"] == "read_write":
+                if endpoint.get("branch_id") == branch_id and endpoint.get("type") == "read_write":
+                    if not endpoint.get("host"):
+                        raise ValueError("Endpoint host not found in response")
                     return endpoint["host"]
-            else:
-                raise ValueError("Endpoint not found for the branch")
+            
+            raise ValueError(f"No read_write endpoint found for branch {branch_id}")
+            
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Failed to fetch endpoint information: {str(e)}")
     
     def get_database_name_and_owner(self, project_id, branch_id):
         if not self.api_key:
@@ -46,13 +52,26 @@ class NeonAPI:
         if not branch_id:
             raise ValueError("BRANCH_ID not set.")
         
-        url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/databases"
-        response = requests.get(url, headers=self._headers())
-        response.raise_for_status()
-        json_response = response.json()
-        if len(json_response["databases"]) == 0:
-            raise ValueError("No databases found in the branch response")
-        return {"database": json_response["databases"][0]["name"], "user": json_response["databases"][0]["owner_name"]}
+        try:
+            url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/databases"
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            json_response = response.json()
+            
+            if not json_response.get("databases"):
+                raise ValueError("No databases found in the branch response")
+            
+            database = json_response["databases"][0]
+            if not database.get("name") or not database.get("owner_name"):
+                raise ValueError("Database name or owner not found in response")
+            
+            return {
+                "database": database["name"],
+                "user": database["owner_name"]
+            }
+            
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Failed to fetch database information: {str(e)}")
     
     def get_database_owner_password(self, project_id, branch_id, user):
         if not self.api_key:
@@ -64,13 +83,19 @@ class NeonAPI:
         if not user:
             raise ValueError("User not provided.")
         
-        url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/roles/{user}/reveal_password"
-        response = requests.get(url, headers=self._headers())
-        response.raise_for_status()
-        json_response = response.json()
-        if "password" not in json_response:
-            raise ValueError("Password not found in the response")
-        return json_response["password"]
+        try:
+            url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/roles/{user}/reveal_password"
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            json_response = response.json()
+            
+            if not json_response.get("password"):
+                raise ValueError("Password not found in the response")
+            
+            return json_response["password"]
+            
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Failed to fetch password: {str(e)}")
 
     def get_branch_connection_info(self, project_id, branch_id):
         if not self.api_key:
