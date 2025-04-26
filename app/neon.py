@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 
 API_URL = "https://console.neon.tech/api/v2"
 
@@ -14,6 +15,80 @@ class NeonAPI:
             "Content-Type": "application/json"
         }
 
+    def get_endpoint_host(self, project_id, branch_id):
+        if not self.api_key:
+            raise ValueError("NEON_API_KEY not set.")
+        if not project_id:
+            raise ValueError("NEON_PROJECT_ID not set.")
+        if not branch_id:
+            raise ValueError("BRANCH_ID not set.")
+        
+        # First get the branch details to get the endpoint_id
+        endpoint_url = f"{API_URL}/projects/{project_id}/endpoints"
+        endpoint_response = requests.get(endpoint_url, headers=self._headers())
+        endpoint_response.raise_for_status()
+        endpoint_json = endpoint_response.json()
+        
+        if len(endpoint_json["endpoints"]) == 0:
+            raise ValueError("No endpoints found for the branch")
+        else:
+            for endpoint in endpoint_json["endpoints"]:
+                if endpoint["branch_id"] == branch_id and endpoint["type"] == "read_write":
+                    return endpoint["host"]
+            else:
+                raise ValueError("Endpoint not found for the branch")
+    
+    def get_database_name_and_owner(self, project_id, branch_id):
+        if not self.api_key:
+            raise ValueError("NEON_API_KEY not set.")
+        if not project_id:
+            raise ValueError("NEON_PROJECT_ID not set.")
+        if not branch_id:
+            raise ValueError("BRANCH_ID not set.")
+        
+        url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/databases"
+        response = requests.get(url, headers=self._headers())
+        response.raise_for_status()
+        json_response = response.json()
+        if len(json_response["databases"]) == 0:
+            raise ValueError("No databases found in the branch response")
+        return {"database": json_response["databases"][0]["name"], "user": json_response["databases"][0]["owner_name"]}
+    
+    def get_database_owner_password(self, project_id, branch_id, user):
+        if not self.api_key:
+            raise ValueError("NEON_API_KEY not set.")
+        if not project_id:
+            raise ValueError("NEON_PROJECT_ID not set.")
+        if not branch_id:
+            raise ValueError("BRANCH_ID not set.")
+        if not user:
+            raise ValueError("User not provided.")
+        
+        url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/roles/{user}/reveal_password"
+        response = requests.get(url, headers=self._headers())
+        response.raise_for_status()
+        json_response = response.json()
+        if "password" not in json_response:
+            raise ValueError("Password not found in the response")
+        return json_response["password"]
+
+    def get_branch_connection_info(self, project_id, branch_id):
+        if not self.api_key:
+            raise ValueError("NEON_API_KEY not set.")
+        if not project_id:
+            raise ValueError("NEON_PROJECT_ID not set.")
+        if not branch_id:
+            raise ValueError("BRANCH_ID not set.")
+
+        database_info = self.get_database_name_and_owner(project_id, branch_id)
+        password = self.get_database_owner_password(project_id, branch_id, database_info["user"])
+        return {
+            "host": self.get_endpoint_host(project_id, branch_id),
+            "database": database_info["database"],
+            "password": password,
+            "role": database_info["user"]
+        }
+        
     def cleanup_branch(self, state, current_branch):
         if not self.api_key or not self.project_id:
             print("No NEON_API_KEY or NEON_PROJECT_ID set, skipping Neon cleanup.")

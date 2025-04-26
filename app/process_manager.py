@@ -1,4 +1,3 @@
-
 import threading
 import hashlib
 import time
@@ -15,6 +14,9 @@ class ProcessManager:
         self.watcher_thread = None
         self.reloader_thread = None
         self.neon = NeonAPI()
+        self.project_id = os.getenv("NEON_PROJECT_ID")
+        self.branch_id = os.getenv("BRANCH_ID")
+        self.manage_branches = self.project_id is None or self.branch_id is None
 
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
@@ -55,6 +57,9 @@ class ProcessManager:
         self.stop_process()
 
     def branch_cleanup(self):
+        if not self.manage_branches:
+            return
+            
         print("Running branch cleanup...")
         state = self._get_neon_branch()
         print("State")
@@ -83,6 +88,9 @@ class ProcessManager:
             return {}
 
     def _write_neon_branch(self, state):
+        if not self.manage_branches:
+            return
+            
         try:
             os.makedirs("/tmp/.neon_local", exist_ok=True)
             with open("/tmp/.neon_local/.branches", "w") as file:
@@ -101,7 +109,7 @@ class ProcessManager:
         self.start_process()
 
     def cleanup(self):
-        delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
+        delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true" and self.manage_branches
         if delete_branch:
             self.branch_cleanup()
         self.shutdown_event.set()

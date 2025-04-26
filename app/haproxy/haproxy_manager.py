@@ -11,12 +11,16 @@ class HAProxyManager(ProcessManager):
         self.neon_api = NeonAPI()
 
     def prepare_config(self):
-        state = self._get_neon_branch()
-        current_branch = self._get_git_branch()
-        parent = os.getenv("PARENT_BRANCH_ID")
-        params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
+        if self.manage_branches:
+            state = self._get_neon_branch()
+            current_branch = self._get_git_branch()
+            parent = os.getenv("PARENT_BRANCH_ID")
+            params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
+            self._write_neon_branch(updated_state)
+        else:
+            params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
+            
         self._write_haproxy_config(params)
-        self._write_neon_branch(updated_state)
 
     def start_process(self):
         self.prepare_config()
