@@ -121,13 +121,13 @@ db:
 
 ## Environment variables and configuration options
 
-| Variable           | Description                                                                       | Required | Default    |
-| ------------------ | --------------------------------------------------------------------------------- | -------- | ---------- |
-| `NEON_API_KEY`     | Your Neon API key. [Manage API Keys](https://neon.tech/docs/manage/api-keys)      | Yes      | N/A        |
-| `NEON_PROJECT_ID`  | Your Neon project ID. Found under Project Settings → General in the Neon console. | Yes      | N/A        |
-| `DRIVER`           | Database driver to use. Options: `postgres`, `serverless`.                        | No       | `postgres` |
-| `PARENT_BRANCH_ID` | Specify a parent branch other than `main`.                                        | No       | `main`     |
-| `DELETE_BRANCH`    | Set to `false` to persist branches after container shutdown.                      | No       | `true`     |
+| Variable           | Description                                                                       | Required | Default               |
+| ------------------ | --------------------------------------------------------------------------------- | -------- | --------------------- |
+| `NEON_API_KEY`     | Your Neon API key. [Manage API Keys](https://neon.tech/docs/manage/api-keys)      | Yes      | N/A                   |
+| `NEON_PROJECT_ID`  | Your Neon project ID. Found under Project Settings → General in the Neon console. | Yes      | N/A                   |
+| `DRIVER`           | Database driver to use. Options: `postgres`, `serverless`.                        | No       | `postgres`            |
+| `PARENT_BRANCH_ID` | Specify a parent branch other than `main`, or `production`.                       | No       | `main` / `production` |
+| `DELETE_BRANCH`    | Set to `false` to persist branches after container shutdown.                      | No       | `true`                |
 
 ## Persistent Neon branch per Git branch
 
