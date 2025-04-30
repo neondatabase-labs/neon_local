@@ -16,6 +16,9 @@ class ProcessManager:
         self.neon = NeonAPI()
         self.project_id = os.getenv("NEON_PROJECT_ID")
         self.branch_id = os.getenv("BRANCH_ID")
+        # Treat empty string the same as None
+        if self.branch_id == "":
+            self.branch_id = None
         self.manage_branches = self.project_id is None or self.branch_id is None
 
     def calculate_file_hash(self, path):

@@ -15,6 +15,8 @@ class HAProxyManager(ProcessManager):
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
             parent = os.getenv("PARENT_BRANCH_ID")
+            if parent == "":
+                parent = None
             params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
             self._write_neon_branch(updated_state)
         else:
