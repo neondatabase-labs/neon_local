@@ -17,18 +17,18 @@ class PgBouncerManager(ProcessManager):
         if os.path.exists(self.cert_path) and os.path.exists(self.key_path):
             return
 
-        print("Generating self-signed certificates...")
+        print("Generating self-signed certificate...")
         # Generate private key
         subprocess.run([
             "openssl", "genrsa", "-out", self.key_path, "2048"
-        ], check=True)
+        ], check=True, capture_output=True)
         
         # Generate CSR
         subprocess.run([
             "openssl", "req", "-new", "-key", self.key_path,
             "-out", "/tmp/server.csr",
-            "-subj", "/CN=localhost"
-        ], check=True)
+            "-subj", "/CN=localhost/O=DO NOT TRUST/OU=Neon Local self-signed cert"
+        ], check=True, capture_output=True)
         
         # Generate self-signed certificate
         subprocess.run([
