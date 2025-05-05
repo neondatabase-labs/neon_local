@@ -11,7 +11,7 @@ class PgBouncerManager(ProcessManager):
         self.neon_api = NeonAPI()
 
     def prepare_config(self):
-        if self.manage_branches:
+        if self.parent_branch_id:
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
             parent = os.getenv("PARENT_BRANCH_ID")
@@ -19,7 +19,7 @@ class PgBouncerManager(ProcessManager):
                 parent = None
             params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
             self._write_neon_branch(updated_state)
-        else:
+        elif self.branch_id:
             params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
             
         self._write_pgbouncer_config(params)

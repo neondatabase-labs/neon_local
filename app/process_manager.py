@@ -19,7 +19,17 @@ class ProcessManager:
         # Treat empty string the same as None
         if self.branch_id == "":
             self.branch_id = None
-        self.manage_branches = self.project_id is None or self.branch_id is None
+        self.parent_branch_id = os.getenv("PARENT_BRANCH_ID")
+        if self.parent_branch_id == "":
+            self.parent_branch_id = None
+        self.delete_branch = os.getenv("DELETE_BRANCH")
+        if self.delete_branch == "" or self.delete_branch == None:
+            self.delete_branch = True
+        self.vscode = os.getenv("VSCODE")
+        if self.vscode == "":
+            self.vscode = None
+        
+        
 
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
@@ -60,7 +70,7 @@ class ProcessManager:
         self.stop_process()
 
     def branch_cleanup(self):
-        if not self.manage_branches:
+        if not self.delete_branch:
             return
             
         print("Running branch cleanup...")
@@ -91,9 +101,6 @@ class ProcessManager:
             return {}
 
     def _write_neon_branch(self, state):
-        if not self.manage_branches:
-            return
-            
         try:
             os.makedirs("/tmp/.neon_local", exist_ok=True)
             with open("/tmp/.neon_local/.branches", "w") as file:
@@ -112,8 +119,7 @@ class ProcessManager:
         self.start_process()
 
     def cleanup(self):
-        delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true" and self.manage_branches
-        if delete_branch:
+        if self.delete_branch:
             self.branch_cleanup()
         self.shutdown_event.set()
         with self.config_cv:

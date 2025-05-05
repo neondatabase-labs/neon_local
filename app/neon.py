@@ -160,6 +160,8 @@ class NeonAPI:
                 payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}], "branch": {"parent_id": parent_branch_id}}
             else:
                 payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}]}
+            if self.vscode:
+                payload["annotation_value"]["vscode": "true"]
             response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
                                      headers=self._headers(), json=payload)
             response.raise_for_status()
