@@ -2,12 +2,10 @@ FROM edoburu/pgbouncer:latest
 
 USER root
 
-# Install HAProxy and Python
-RUN apk add --no-cache haproxy python3 py3-requests
+# Install HAProxy, Python, and OpenSSL
+RUN apk add --no-cache haproxy python3 py3-requests openssl
 
-# Certificates and PgBouncer config
-COPY /pgbouncer/server.crt /etc/pgbouncer/server.crt
-COPY /pgbouncer/server.key /etc/pgbouncer/server.key
+# PgBouncer config
 COPY /pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
 COPY /pgbouncer/pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
 
