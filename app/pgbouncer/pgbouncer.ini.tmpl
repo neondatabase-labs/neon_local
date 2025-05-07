@@ -10,7 +10,9 @@ pool_mode = transaction
 max_client_conn = 100
 max_prepared_statements = 100
 default_pool_size = 20
-client_tls_sslmode = disable
+client_tls_sslmode = require
+client_tls_cert_file = /etc/pgbouncer/server.crt
+client_tls_key_file = /etc/pgbouncer/server.key
 
 server_tls_sslmode = verify-full
 log_connections = 1

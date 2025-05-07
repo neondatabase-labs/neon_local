@@ -6,8 +6,8 @@ services:
     environment:
       NEON_API_KEY: ${NEON_API_KEY}
       NEON_PROJECT_ID: ${NEON_PROJECT_ID}
-      #PARENT_BRANCH_ID: ${NEON_PARENT_BRANCH_ID}
-      BRANCH_ID: br-dark-bar-a440iizf
+      PARENT_BRANCH_ID: ${PARENT_BRANCH_ID}
+      #BRANCH_ID: br-dark-bar-a440iizf
       #DELETE_BRANCH: < True | False >
       #DRIVER: < postgres | serverless >
     #volumes:
