@@ -131,7 +131,13 @@ class NeonAPI:
         params = state.get(current_branch)
         if params:
             try:
-                requests.get(f"{API_URL}/projects/{self.project_id}/branches/{params['branch_id']}",
+                # Handle both old and new state formats
+                branch_id = params.get("branch_id")
+                if not branch_id:
+                    print("No branch_id found in state, skipping cleanup")
+                    return state
+                    
+                requests.get(f"{API_URL}/projects/{self.project_id}/branches/{branch_id}",
                              headers=self._headers()).raise_for_status()
             except:
                 print("Branch not found at Neon.")
@@ -139,7 +145,7 @@ class NeonAPI:
 
             if params:
                 response = requests.delete(
-                    f"{API_URL}/projects/{self.project_id}/branches/{params['branch_id']}",
+                    f"{API_URL}/projects/{self.project_id}/branches/{branch_id}",
                     headers=self._headers())
                 print(response)
                 response.raise_for_status()
@@ -181,6 +187,10 @@ class NeonAPI:
 
         # Get connection info for the branch
         connection_info = self.get_branch_connection_info(self.project_id, branch_id)
+        
+        # Add branch_id to each connection info object
+        for info in connection_info:
+            info["branch_id"] = branch_id
         
         # Store branch ID in state
         if current_branch:

@@ -48,35 +48,28 @@ class PgBouncerManager(ProcessManager):
     def prepare_config(self):
         self._generate_certificates()
         params = None
-        print(f"Debug: parent_branch_id={self.parent_branch_id}, branch_id={self.branch_id}")
         
         if self.parent_branch_id:
-            print("Debug: Using parent branch flow")
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
             parent = os.getenv("PARENT_BRANCH_ID")
             if parent == "":
                 parent = None
-            print(f"Debug: current_branch={current_branch}, parent={parent}")
             params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent, self.vscode)
             self._write_neon_branch(updated_state)
         elif self.branch_id:
-            print(f"Debug: Using direct branch flow with branch_id={self.branch_id}")
             try:
                 params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
-                print(f"Debug: Got connection info: {params}")
             except Exception as e:
                 print(f"Debug: Error getting connection info: {str(e)}")
                 raise
         else:
-            print("Debug: No branch ID provided, creating new branch from main")
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
             params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, vscode=self.vscode)
             self._write_neon_branch(updated_state)
         
         if params is None:
-            print("Debug: No parameters obtained from any flow")
             raise ValueError("Failed to get connection parameters")
             
         self._write_pgbouncer_config(params)

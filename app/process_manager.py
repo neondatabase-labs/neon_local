@@ -21,18 +21,12 @@ class ProcessManager:
             raise ValueError("NEON_PROJECT_ID environment variable is required")
             
         self.branch_id = os.getenv("BRANCH_ID")
-        if not self.branch_id:
-            print("Warning: BRANCH_ID not set, will use parent branch flow")
             
         self.parent_branch_id = os.getenv("PARENT_BRANCH_ID")
-        if not self.parent_branch_id:
-            print("Warning: PARENT_BRANCH_ID not set")
             
         self.delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
         self.vscode = os.getenv("VSCODE", "").lower() == "true"
         
-        print(f"Debug: Initialized with project_id={self.project_id}, branch_id={self.branch_id}, parent_branch_id={self.parent_branch_id}")
-
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
             return None
@@ -105,10 +99,22 @@ class ProcessManager:
     def _write_neon_branch(self, state):
         try:
             os.makedirs("/tmp/.neon_local", exist_ok=True)
+            # Ensure state is properly formatted for each branch
+            for branch, data in state.items():
+                if isinstance(data, dict) and "branch_id" in data:
+                    # Keep the existing branch_id structure
+                    continue
+                elif isinstance(data, list):
+                    # Convert list of connection info to proper state format
+                    if data and isinstance(data[0], dict) and "database" in data[0]:
+                        # Extract branch_id from the first connection info
+                        branch_id = data[0].get("branch_id")
+                        if branch_id:
+                            state[branch] = {"branch_id": branch_id}
             with open("/tmp/.neon_local/.branches", "w") as file:
                 json.dump(state, file)
-        except:
-            print("Failed to write state file.")
+        except Exception as e:
+            print(f"Failed to write state file: {str(e)}")
 
     def start_process(self):
         raise NotImplementedError
