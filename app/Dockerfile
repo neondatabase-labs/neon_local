@@ -23,6 +23,9 @@ RUN touch /scripts/app/__init__.py
 # Environment
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/scripts
+ENV NEON_PROJECT_ID=""
+ENV BRANCH_ID=""
+ENV DELETE_BRANCH=true
 
 # Create and set permissions for logs
 RUN touch /var/log/pgbouncer.log \

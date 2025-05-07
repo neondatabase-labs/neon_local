@@ -1,5 +1,5 @@
 [databases]
-*=user={role} password={password} host={host} port=5432 dbname={database}
+*=user={role} password={password} host={host} port=5432 dbname={database} 
 
 [pgbouncer]
 listen_addr = 0.0.0.0
@@ -13,6 +13,7 @@ default_pool_size = 20
 client_tls_sslmode = require
 client_tls_cert_file = /etc/pgbouncer/server.crt
 client_tls_key_file = /etc/pgbouncer/server.key
+
 server_tls_sslmode = verify-full
 log_connections = 1
 log_disconnections = 1

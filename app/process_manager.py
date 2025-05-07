@@ -1,4 +1,3 @@
-
 import threading
 import hashlib
 import time
@@ -15,7 +14,19 @@ class ProcessManager:
         self.watcher_thread = None
         self.reloader_thread = None
         self.neon = NeonAPI()
-
+        
+        # Get and validate required environment variables
+        self.project_id = os.getenv("NEON_PROJECT_ID")
+        if not self.project_id:
+            raise ValueError("NEON_PROJECT_ID environment variable is required")
+            
+        self.branch_id = os.getenv("BRANCH_ID")
+            
+        self.parent_branch_id = os.getenv("PARENT_BRANCH_ID")
+            
+        self.delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
+        self.vscode = os.getenv("VSCODE", "").lower() == "true"
+        
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
             return None
@@ -55,6 +66,9 @@ class ProcessManager:
         self.stop_process()
 
     def branch_cleanup(self):
+        if not self.delete_branch:
+            return
+            
         print("Running branch cleanup...")
         state = self._get_neon_branch()
         print("State")
@@ -85,10 +99,22 @@ class ProcessManager:
     def _write_neon_branch(self, state):
         try:
             os.makedirs("/tmp/.neon_local", exist_ok=True)
+            # Ensure state is properly formatted for each branch
+            for branch, data in state.items():
+                if isinstance(data, dict) and "branch_id" in data:
+                    # Keep the existing branch_id structure
+                    continue
+                elif isinstance(data, list):
+                    # Convert list of connection info to proper state format
+                    if data and isinstance(data[0], dict) and "database" in data[0]:
+                        # Extract branch_id from the first connection info
+                        branch_id = data[0].get("branch_id")
+                        if branch_id:
+                            state[branch] = {"branch_id": branch_id}
             with open("/tmp/.neon_local/.branches", "w") as file:
                 json.dump(state, file)
-        except:
-            print("Failed to write state file.")
+        except Exception as e:
+            print(f"Failed to write state file: {str(e)}")
 
     def start_process(self):
         raise NotImplementedError
@@ -101,8 +127,7 @@ class ProcessManager:
         self.start_process()
 
     def cleanup(self):
-        delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
-        if delete_branch:
+        if self.delete_branch:
             self.branch_cleanup()
         self.shutdown_event.set()
         with self.config_cv:

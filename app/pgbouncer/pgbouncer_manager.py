@@ -47,12 +47,32 @@ class PgBouncerManager(ProcessManager):
 
     def prepare_config(self):
         self._generate_certificates()
-        state = self._get_neon_branch()
-        current_branch = self._get_git_branch()
-        parent = os.getenv("PARENT_BRANCH_ID")
-        params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent)
+        params = None
+        
+        if self.parent_branch_id:
+            state = self._get_neon_branch()
+            current_branch = self._get_git_branch()
+            parent = os.getenv("PARENT_BRANCH_ID")
+            if parent == "":
+                parent = None
+            params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent, self.vscode)
+            self._write_neon_branch(updated_state)
+        elif self.branch_id:
+            try:
+                params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
+            except Exception as e:
+                print(f"Debug: Error getting connection info: {str(e)}")
+                raise
+        else:
+            state = self._get_neon_branch()
+            current_branch = self._get_git_branch()
+            params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, vscode=self.vscode)
+            self._write_neon_branch(updated_state)
+        
+        if params is None:
+            raise ValueError("Failed to get connection parameters")
+            
         self._write_pgbouncer_config(params)
-        self._write_neon_branch(updated_state)
 
     def start_process(self):
         self.prepare_config()
@@ -72,9 +92,29 @@ class PgBouncerManager(ProcessManager):
                 self.pgbouncer_process.wait()
             self.pgbouncer_process = None
     
-    def _write_pgbouncer_config(self, params):
+    def _write_pgbouncer_config(self, databases):
         with open("/scripts/app/pgbouncer.ini.tmpl", "r") as file:
             template = file.read()
-        config = template.format(**params)
+        
+        # Split the template into sections
+        sections = template.split("[pgbouncer]")
+        databases_section = sections[0].strip()
+        pgbouncer_section = sections[1].strip()
+        
+        # Generate database entries for each database
+        database_entries = []
+        for db in databases:
+            entry = f"{db['database']}=user={db['user']} password={db['password']} host={db['host']} port=5432 dbname={db['database']}"
+            database_entries.append(entry)
+        
+        # Add wildcard entry pointing to the first database
+        if databases:
+            first_db = databases[0]
+            wildcard_entry = f"*=user={first_db['user']} password={first_db['password']} host={first_db['host']} port=5432 dbname={first_db['database']}"
+            database_entries.append(wildcard_entry)
+        
+        # Combine all sections
+        config = f"[databases]\n" + "\n".join(database_entries) + "\n\n[pgbouncer]\n" + pgbouncer_section
+        
         with open("/etc/pgbouncer/pgbouncer.ini", "w") as file:
             file.write(config)
