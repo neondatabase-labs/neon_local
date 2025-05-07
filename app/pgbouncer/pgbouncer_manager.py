@@ -9,8 +9,44 @@ class PgBouncerManager(ProcessManager):
         super().__init__()
         self.pgbouncer_process = None
         self.neon_api = NeonAPI()
+        self.cert_path = "/etc/pgbouncer/server.crt"
+        self.key_path = "/etc/pgbouncer/server.key"
+
+    def _generate_certificates(self):
+        """Generate self-signed certificates if they don't exist."""
+        if os.path.exists(self.cert_path) and os.path.exists(self.key_path):
+            return
+
+        print("Generating self-signed certificate...")
+        # Generate private key
+        subprocess.run([
+            "openssl", "genrsa", "-out", self.key_path, "2048"
+        ], check=True, capture_output=True)
+        
+        # Generate CSR
+        subprocess.run([
+            "openssl", "req", "-new", "-key", self.key_path,
+            "-out", "/tmp/server.csr",
+            "-subj", "/CN=localhost/O=DO NOT TRUST/OU=Neon Local self-signed cert"
+        ], check=True, capture_output=True)
+        
+        # Generate self-signed certificate
+        subprocess.run([
+            "openssl", "x509", "-req", "-days", "365",
+            "-in", "/tmp/server.csr",
+            "-signkey", self.key_path,
+            "-out", self.cert_path
+        ], check=True)
+        
+        # Set proper permissions
+        os.chmod(self.key_path, 0o600)
+        os.chmod(self.cert_path, 0o644)
+        
+        # Clean up CSR
+        os.remove("/tmp/server.csr")
 
     def prepare_config(self):
+        self._generate_certificates()
         params = None
         print(f"Debug: parent_branch_id={self.parent_branch_id}, branch_id={self.branch_id}")
         
