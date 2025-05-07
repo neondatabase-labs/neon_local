@@ -61,14 +61,21 @@ class NeonAPI:
             if not json_response.get("databases"):
                 raise ValueError("No databases found in the branch response")
             
-            database = json_response["databases"][0]
-            if not database.get("name") or not database.get("owner_name"):
-                raise ValueError("Database name or owner not found in response")
+            databases = []
+            for database in json_response["databases"]:
+                if not database.get("name") or not database.get("owner_name"):
+                    print(f"Warning: Database {database.get('name', 'unknown')} missing name or owner, skipping")
+                    continue
+                
+                databases.append({
+                    "database": database["name"],
+                    "user": database["owner_name"]
+                })
             
-            return {
-                "database": database["name"],
-                "user": database["owner_name"]
-            }
+            if not databases:
+                raise ValueError("No valid databases found in the branch response")
+            
+            return databases
             
         except requests.exceptions.RequestException as e:
             raise ValueError(f"Failed to fetch database information: {str(e)}")
@@ -105,14 +112,15 @@ class NeonAPI:
         if not branch_id:
             raise ValueError("BRANCH_ID not set.")
 
-        database_info = self.get_database_name_and_owner(project_id, branch_id)
-        password = self.get_database_owner_password(project_id, branch_id, database_info["user"])
-        return {
-            "host": self.get_endpoint_host(project_id, branch_id),
-            "database": database_info["database"],
-            "password": password,
-            "role": database_info["user"]
-        }
+        databases = self.get_database_name_and_owner(project_id, branch_id)
+        host = self.get_endpoint_host(project_id, branch_id)
+        
+        # Add password to each database entry
+        for db_info in databases:
+            db_info["password"] = self.get_database_owner_password(project_id, branch_id, db_info["user"])
+            db_info["host"] = host
+        
+        return databases
         
     def cleanup_branch(self, state, current_branch):
         if not self.api_key or not self.project_id:
@@ -142,35 +150,42 @@ class NeonAPI:
 
         return state
 
-    def fetch_or_create_branch(self, state, current_branch, parent_branch_id=None):
+    def fetch_or_create_branch(self, state, current_branch, parent_branch_id=None, vscode=False):
         if not self.api_key or not self.project_id:
             raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set.")
 
-        params = state.get(current_branch) if current_branch else None
-        if params:
+        branch_id = None
+        if current_branch and current_branch in state:
             try:
-                requests.get(f"{API_URL}/projects/{self.project_id}/branches/{params['branch_id']}",
+                branch_id = state[current_branch]["branch_id"]
+                # Verify branch still exists
+                requests.get(f"{API_URL}/projects/{self.project_id}/branches/{branch_id}",
                              headers=self._headers()).raise_for_status()
             except:
                 print("No branch found at Neon.")
-                params = None
+                branch_id = None
 
-        if params is None:
+        if branch_id is None:
+            # Create new branch
             if parent_branch_id:
                 payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}], "branch": {"parent_id": parent_branch_id}}
             else:
                 payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}]}
-            if self.vscode:
-                payload["annotation_value"]["vscode": "true"]
+            if vscode:
+                payload["annotation_value"]["vscode"] = "true"
             response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
                                      headers=self._headers(), json=payload)
             response.raise_for_status()
             json_response = response.json()
-            params = json_response["connection_uris"][0]["connection_parameters"]
-            params["branch_id"] = json_response["branch"]["id"]
-            if current_branch:
-                state[current_branch] = params
-            else:
-                state['None'] = params
+            branch_id = json_response["branch"]["id"]
 
-        return params, state
+        # Get connection info for the branch
+        connection_info = self.get_branch_connection_info(self.project_id, branch_id)
+        
+        # Store branch ID in state
+        if current_branch:
+            state[current_branch] = {"branch_id": branch_id}
+        else:
+            state['None'] = {"branch_id": branch_id}
+
+        return connection_info, state

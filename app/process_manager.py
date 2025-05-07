@@ -14,22 +14,24 @@ class ProcessManager:
         self.watcher_thread = None
         self.reloader_thread = None
         self.neon = NeonAPI()
+        
+        # Get and validate required environment variables
         self.project_id = os.getenv("NEON_PROJECT_ID")
+        if not self.project_id:
+            raise ValueError("NEON_PROJECT_ID environment variable is required")
+            
         self.branch_id = os.getenv("BRANCH_ID")
-        # Treat empty string the same as None
-        if self.branch_id == "":
-            self.branch_id = None
+        if not self.branch_id:
+            print("Warning: BRANCH_ID not set, will use parent branch flow")
+            
         self.parent_branch_id = os.getenv("PARENT_BRANCH_ID")
-        if self.parent_branch_id == "":
-            self.parent_branch_id = None
-        self.delete_branch = os.getenv("DELETE_BRANCH")
-        if self.delete_branch == "" or self.delete_branch == None:
-            self.delete_branch = True
-        self.vscode = os.getenv("VSCODE")
-        if self.vscode == "":
-            self.vscode = None
+        if not self.parent_branch_id:
+            print("Warning: PARENT_BRANCH_ID not set")
+            
+        self.delete_branch = os.getenv("DELETE_BRANCH", "true").lower() == "true"
+        self.vscode = os.getenv("VSCODE", "").lower() == "true"
         
-        
+        print(f"Debug: Initialized with project_id={self.project_id}, branch_id={self.branch_id}, parent_branch_id={self.parent_branch_id}")
 
     def calculate_file_hash(self, path):
         if not os.path.exists(path):
