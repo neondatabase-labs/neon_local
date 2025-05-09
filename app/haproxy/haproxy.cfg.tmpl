@@ -14,7 +14,7 @@ defaults
 
 frontend http_front
     bind *:5432
-    default_backend http_backend
+    # Backend selection rules will be added here
 
 backend http_backend
     server ws_server1 {host}:443 ssl verify none sni str({host}) check
