@@ -71,6 +71,9 @@ class HAProxyManager(ProcessManager):
         frontend_section = sections[0].strip()
         backend_template = sections[1].strip()
         
+        # Add global ACLs first
+        frontend_section += "\n    acl is_sql path_beg /sql"
+        
         # Generate backend sections for each database
         backend_sections = []
         for db in databases:
@@ -84,8 +87,11 @@ backend {backend_name}
 """
             backend_sections.append(backend_config)
             
-            # Add use_backend rule to frontend section
-            frontend_section += f"\n    use_backend {backend_name} if {{ path_beg /{db['database']} }}"
+            # Add database-specific ACLs and rules
+            frontend_section += f"""
+    acl is_{db['database']} path_beg /{db['database']}
+    acl is_{db['database']}_connection hdr(Neon-Connection-String) -m reg -i {db['database']}
+    use_backend {backend_name} if is_{db['database']} or is_sql is_{db['database']}_connection"""
         
         # Add default backend rule using the first database
         if databases:
