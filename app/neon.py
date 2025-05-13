@@ -173,11 +173,19 @@ class NeonAPI:
 
         if branch_id is None:
             # Create new branch
-            if parent_branch_id:
-                payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}], "branch": {"parent_id": parent_branch_id}}
-            else:
-                payload = {"annotation_value": {"neon_local": "true"}, "endpoints": [{"type": "read_write"}]}
+            payload = {
+                "annotation_value": {"neon_local": "true"},
+                "endpoints": [{"type": "read_write"}]
+            }
+
+            if parent_branch_id or current_branch:
+                payload["branch"] = {}
+                if parent_branch_id:
+                    payload["branch"]["parent_id"] = parent_branch_id
+                if current_branch:
+                    payload["branch"]["name"] = current_branch
             if vscode:
+                payload["annotation_value"] = {}
                 payload["annotation_value"]["vscode"] = "true"
             response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
                                      headers=self._headers(), json=payload)
