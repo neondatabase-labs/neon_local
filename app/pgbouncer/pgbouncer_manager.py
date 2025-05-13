@@ -49,7 +49,13 @@ class PgBouncerManager(ProcessManager):
         self._generate_certificates()
         params = None
         
-        if self.parent_branch_id:
+        if self.branch_id:
+            try:
+                params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
+            except Exception as e:
+                print(f"Debug: Error getting connection info: {str(e)}")
+                raise
+        elif self.parent_branch_id:
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
             parent = os.getenv("PARENT_BRANCH_ID")
@@ -57,12 +63,7 @@ class PgBouncerManager(ProcessManager):
                 parent = None
             params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent, self.vscode)
             self._write_neon_branch(updated_state)
-        elif self.branch_id:
-            try:
-                params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
-            except Exception as e:
-                print(f"Debug: Error getting connection info: {str(e)}")
-                raise
+
         else:
             state = self._get_neon_branch()
             current_branch = self._get_git_branch()
