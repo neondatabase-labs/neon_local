@@ -156,6 +156,34 @@ class NeonAPI:
 
         return state
 
+    def _get_available_branch_name(self, base_name):
+        """Get an available branch name by appending a number if needed."""
+        try:
+            # Get all existing branches
+            branches_response = requests.get(f"{API_URL}/projects/{self.project_id}/branches",
+                                           headers=self._headers())
+            branches_response.raise_for_status()
+            branches = branches_response.json().get("branches", [])
+            
+            # Get all existing branch names
+            existing_names = {branch.get("name") for branch in branches if branch.get("name")}
+            
+            # If base name is available, use it
+            if base_name not in existing_names:
+                return base_name
+            
+            # Try appending numbers until we find an available name
+            counter = 2
+            while True:
+                new_name = f"{base_name}_{counter}"
+                if new_name not in existing_names:
+                    return new_name
+                counter += 1
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error checking branch names: {str(e)}")
+            raise
+
     def fetch_or_create_branch(self, state, current_branch, parent_branch_id=None, vscode=False):
         if not self.api_key or not self.project_id:
             raise ValueError("NEON_API_KEY or NEON_PROJECT_ID not set.")
@@ -172,26 +200,39 @@ class NeonAPI:
                 branch_id = None
 
         if branch_id is None:
-            # Create new branch
-            payload = {
-                "annotation_value": {"neon_local": "true"},
-                "endpoints": [{"type": "read_write"}]
-            }
+            try:
+                # Get an available branch name
+                branch_name = self._get_available_branch_name(current_branch) if current_branch else None
+                if branch_name != current_branch:
+                    print(f"Branch name '{current_branch}' already exists, using '{branch_name}' instead")
+                
+                # Create new branch
+                payload = {
+                    "annotation_value": {"neon_local": "true"},
+                    "endpoints": [{"type": "read_write"}]
+                }
 
-            if parent_branch_id or current_branch:
-                payload["branch"] = {}
-                if parent_branch_id:
-                    payload["branch"]["parent_id"] = parent_branch_id
-                if current_branch:
-                    payload["branch"]["name"] = current_branch
-            if vscode:
-                payload["annotation_value"] = {}
-                payload["annotation_value"]["vscode"] = "true"
-            response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
-                                     headers=self._headers(), json=payload)
-            response.raise_for_status()
-            json_response = response.json()
-            branch_id = json_response["branch"]["id"]
+                if parent_branch_id or branch_name:
+                    payload["branch"] = {}
+                    if parent_branch_id:
+                        payload["branch"]["parent_id"] = parent_branch_id
+                    if branch_name:
+                        payload["branch"]["name"] = branch_name
+                if vscode:
+                    payload["annotation_value"]["vscode"] = "true"
+
+                response = requests.post(f"{API_URL}/projects/{self.project_id}/branches",
+                                         headers=self._headers(), json=payload)
+                response.raise_for_status()
+                json_response = response.json()
+                branch_id = json_response["branch"]["id"]
+                
+            except requests.exceptions.RequestException as e:
+                print(f"Error creating branch: {str(e)}")
+                raise
+
+        if not branch_id:
+            raise ValueError("Failed to get branch ID")
 
         # Get connection info for the branch
         connection_info = self.get_branch_connection_info(self.project_id, branch_id)
@@ -200,7 +241,7 @@ class NeonAPI:
         for info in connection_info:
             info["branch_id"] = branch_id
         
-        # Store branch ID in state
+        # Store branch ID in state using the original branch name
         if current_branch:
             state[current_branch] = {"branch_id": branch_id}
         else:
