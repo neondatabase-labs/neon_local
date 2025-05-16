@@ -51,34 +51,35 @@ class NeonAPI:
             raise ValueError("NEON_PROJECT_ID not set.")
         if not branch_id:
             raise ValueError("BRANCH_ID not set.")
-        
+
         try:
             url = f"{API_URL}/projects/{project_id}/branches/{branch_id}/databases"
             response = requests.get(url, headers=self._headers())
             response.raise_for_status()
             json_response = response.json()
-            
+
             if not json_response.get("databases"):
                 raise ValueError("No databases found in the branch response")
-            
+
             databases = []
             for database in json_response["databases"]:
                 if not database.get("name") or not database.get("owner_name"):
                     print(f"Warning: Database {database.get('name', 'unknown')} missing name or owner, skipping")
                     continue
-                
+
                 databases.append({
                     "database": database["name"],
                     "user": database["owner_name"]
                 })
-            
+
             if not databases:
                 raise ValueError("No valid databases found in the branch response")
-            
+
             return databases
-            
-        except requests.exceptions.RequestException as e:
-            raise ValueError(f"Failed to fetch database information: {str(e)}")
+
+        except Exception as e:
+            print(f"Debug: Error getting connection info: {str(e)}")
+            raise
     
     def get_database_owner_password(self, project_id, branch_id, user):
         if not self.api_key:
