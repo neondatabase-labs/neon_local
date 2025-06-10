@@ -45,6 +45,7 @@ class HAProxyManager(ProcessManager):
             self.haproxy_process = subprocess.Popen([
                 "haproxy", "-f", "/tmp/haproxy.cfg"
             ], stdout=log, stderr=log)
+        print("Neon Local is ready")
 
     def stop_process(self):
         if self.haproxy_process:
