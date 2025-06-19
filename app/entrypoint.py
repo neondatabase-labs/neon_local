@@ -27,7 +27,7 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
 
     manager.reloader_thread = threading.Thread(target=manager.start_reloader_loop)
-    manager.watcher_thread = threading.Thread(target=manager.watch_file_changes, args=("/scripts/.git/HEAD",))
+    manager.watcher_thread = threading.Thread(target=manager.watch_file_changes, args=("/tmp/.git/HEAD",))
 
     manager.reloader_thread.start()
     manager.watcher_thread.start()
