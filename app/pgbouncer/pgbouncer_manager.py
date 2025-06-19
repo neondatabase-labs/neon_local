@@ -81,6 +81,7 @@ class PgBouncerManager(ProcessManager):
             self.pgbouncer_process = subprocess.Popen([
                 "/usr/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"
             ], stdout=log, stderr=log)
+        print("Neon Local is ready")
 
     def stop_process(self):
         if self.pgbouncer_process:
