@@ -84,7 +84,7 @@ class HAProxyManager(ProcessManager):
             backend_config = f"""
 backend {backend_name}
     server ws_server1 {db['host']}:443 ssl verify none sni str({db['host']}) check
-    http-request set-header Neon-Connection-String "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require"
+    http-request set-header Neon-Connection-String "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name=neon_local"
     http-request set-header Host {db['host']}
 """
             backend_sections.append(backend_config)

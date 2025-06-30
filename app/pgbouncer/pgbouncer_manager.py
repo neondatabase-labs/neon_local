@@ -106,13 +106,13 @@ class PgBouncerManager(ProcessManager):
         # Generate database entries for each database
         database_entries = []
         for db in databases:
-            entry = f"{db['database']}=user={db['user']} password={db['password']} host={db['host']} port=5432 dbname={db['database']}"
+            entry = f"{db['database']}=user={db['user']} password={db['password']} host={db['host']} port=5432 dbname={db['database']} application_name=neon_local"
             database_entries.append(entry)
         
         # Add wildcard entry pointing to the first database
         if databases:
             first_db = databases[0]
-            wildcard_entry = f"*=user={first_db['user']} password={first_db['password']} host={first_db['host']} port=5432 dbname={first_db['database']}"
+            wildcard_entry = f"*=user={first_db['user']} password={first_db['password']} host={first_db['host']} port=5432 dbname={first_db['database']} application_name=neon_local"
             database_entries.append(wildcard_entry)
         
         # Combine all sections
