@@ -70,8 +70,8 @@ class HAProxyManager(ProcessManager):
         
         # Determine application name and user agent suffix based on CLIENT environment variable
         client = os.getenv("CLIENT", "").lower()
-        app_name = "neon_local_vscode" if client == "vscode" else "neon_local_container"
-        user_agent_suffix = "_neon_local_vscode" if client == "vscode" else "_neon_local_container"
+        app_name = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
+        user_agent_suffix = "_neon_local_vscode_container" if client == "vscode" else "_neon_local_container"
         
         # Split the template into sections
         sections = haproxy_template.split("backend http_backend")

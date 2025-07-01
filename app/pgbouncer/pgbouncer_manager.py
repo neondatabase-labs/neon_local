@@ -105,7 +105,7 @@ class PgBouncerManager(ProcessManager):
         
         # Determine application name based on CLIENT environment variable
         client = os.getenv("CLIENT", "").lower()
-        app_name = "neon_local_vscode" if client == "vscode" else "neon_local_container"
+        app_name = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
         
         # Generate database entries for each database
         database_entries = []

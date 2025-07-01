@@ -12,7 +12,7 @@ class NeonAPI:
     def _headers(self):
         # Determine user agent based on CLIENT environment variable
         client = os.getenv("CLIENT", "").lower()
-        user_agent = "neon_local_vscode" if client == "vscode" else "neon_local_container"
+        user_agent = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
         
         return {
             "Authorization": f"Bearer {self.api_key}",
