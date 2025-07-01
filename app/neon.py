@@ -10,9 +10,14 @@ class NeonAPI:
         self.project_id = os.getenv("NEON_PROJECT_ID")
 
     def _headers(self):
+        # Determine user agent based on CLIENT environment variable
+        client = os.getenv("CLIENT", "").lower()
+        user_agent = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
+        
         return {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": user_agent
         }
 
     def get_endpoint_host(self, project_id, branch_id):
