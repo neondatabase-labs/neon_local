@@ -81,7 +81,7 @@ Connect using the Neon [serverless driver](https://neon.tech/docs/serverless/ser
 import { neon, neonConfig } from '@neondatabase/serverless';
 neonConfig.fetchEndpoint = 'http://localhost:5432/sql';
 
-const sql = neon('postgres://neon:npg@localhost:5432/<database_name>?application_name=neon_local');
+const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 ```
 
 ### Docker compose
@@ -90,7 +90,7 @@ const sql = neon('postgres://neon:npg@localhost:5432/<database_name>?application
 import { neon, neonConfig } from '@neondatabase/serverless';
 neonConfig.fetchEndpoint = 'http://db:5432/sql';
 
-const sql = neon('postgres://neon:npg@db:5432/<database_name>?application_name=neon_local');
+const sql = neon('postgres://neon:npg@db:5432/<database_name>');
 ```
 
 When using the serverless driver, set `DRIVER=serverless`:
