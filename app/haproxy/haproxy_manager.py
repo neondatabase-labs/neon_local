@@ -68,6 +68,11 @@ class HAProxyManager(ProcessManager):
 
         print(f"Databases: {databases}")
         
+        # Determine application name and user agent suffix based on CLIENT environment variable
+        client = os.getenv("CLIENT", "").lower()
+        app_name = "neon_local_vscode" if client == "vscode" else "neon_local_container"
+        user_agent_suffix = "_neon_local_vscode" if client == "vscode" else "_neon_local_container"
+        
         # Split the template into sections
         sections = haproxy_template.split("backend http_backend")
         frontend_section = sections[0].strip()
@@ -84,8 +89,9 @@ class HAProxyManager(ProcessManager):
             backend_config = f"""
 backend {backend_name}
     server ws_server1 {db['host']}:443 ssl verify none sni str({db['host']}) check
-    http-request set-header Neon-Connection-String "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name=neon_local"
+    http-request set-header Neon-Connection-String "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name={app_name}"
     http-request set-header Host {db['host']}
+    http-request set-header User-Agent "%[req.hdr(User-Agent)]{user_agent_suffix}"
 """
             backend_sections.append(backend_config)
             
