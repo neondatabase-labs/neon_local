@@ -3,22 +3,39 @@
 
 [pgbouncer]
 listen_addr = 0.0.0.0
-listen_port = 5432
+listen_port = 6432
 auth_type = md5
 auth_file = /etc/pgbouncer/userlist.txt
-pool_mode = transaction
-max_client_conn = 100
+
+# Performance optimized pooling mode - session mode for better connection reuse
+pool_mode = session
+max_client_conn = 200
 max_prepared_statements = 100
-default_pool_size = 20
+# Increased pool sizes for better performance
+default_pool_size = 50
+min_pool_size = 10
+reserve_pool_size = 5
+
+# SSL configuration
 client_tls_sslmode = require
 client_tls_cert_file = /etc/pgbouncer/server.crt
 client_tls_key_file = /etc/pgbouncer/server.key
-
 server_tls_sslmode = verify-full
-log_connections = 1
-log_disconnections = 1
+
+# Performance tuning - using only supported parameters
+server_connect_timeout = 15
+query_timeout = 60
+query_wait_timeout = 120
+client_idle_timeout = 0
+server_idle_timeout = 600
+
+# Reduced logging for better performance (can be re-enabled for debugging)
+log_connections = 0
+log_disconnections = 0
 log_pooler_errors = 1
-log_stats = 1
-verbose = 3
+log_stats = 0
+verbose = 0
+
+# Optimized startup parameters
 ignore_startup_parameters = extra_float_digits, application_name
 server_reset_query = DISCARD ALL

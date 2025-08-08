@@ -4,10 +4,22 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.2.3)'
+        required: false
+        type: string
+      create_release:
+        description: 'Create a release (will create git tag and version tags)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   ghcr-push:
@@ -16,6 +28,46 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Create git tag for manual release
+        if: github.event.inputs.create_release == 'true' && github.event.inputs.version != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+          git push origin "v${{ github.event.inputs.version }}"
+
+      - name: Extract version metadata
+        id: meta
+        run: |
+          # Handle manual workflow dispatch with create_release
+          if [[ "${{ github.event.inputs.create_release }}" == "true" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            IS_RELEASE=true
+            echo "Creating release from manual trigger: v$VERSION"
+          # Extract version from git tag
+          elif [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            IS_RELEASE=true
+            echo "Creating release from git tag: v$VERSION"
+          # Development build
+          else
+            VERSION="dev-$(date +%Y%m%d)"
+            MAJOR="dev"
+            MINOR="dev"
+            IS_RELEASE=false
+            echo "Creating development build"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+          echo "sha_short=$(echo $GITHUB_SHA | head -c7)" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -43,7 +95,9 @@ jobs:
           pull: true
           tags: |
             ghcr.io/neondatabase-labs/neon_local:latest
-            ghcr.io/neondatabase-labs/neon_local:${{ github.sha }}
+            ghcr.io/neondatabase-labs/neon_local:${{ steps.meta.outputs.sha_short }}
+            ${{ steps.meta.outputs.is_release == 'true' && format('ghcr.io/neondatabase-labs/neon_local:v{0}', steps.meta.outputs.major) || '' }}
+            ${{ steps.meta.outputs.is_release == 'true' && format('ghcr.io/neondatabase-labs/neon_local:v{0}', steps.meta.outputs.minor) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -57,12 +111,44 @@ jobs:
 
   dockerhub-push:
     needs: ghcr-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) || (github.event.inputs.create_release == 'true' && github.event.inputs.version != '')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Extract version metadata
+        id: meta
+        run: |
+          # Handle manual workflow dispatch with create_release
+          if [[ "${{ github.event.inputs.create_release }}" == "true" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            IS_RELEASE=true
+            echo "Creating release from manual trigger: v$VERSION"
+          # Extract version from git tag
+          elif [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            IS_RELEASE=true
+            echo "Creating release from git tag: v$VERSION"
+          # Development build
+          else
+            VERSION="dev-$(date +%Y%m%d)"
+            MAJOR="dev"
+            MINOR="dev"
+            IS_RELEASE=false
+            echo "Creating development build"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+          echo "sha_short=$(echo $GITHUB_SHA | head -c7)" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -83,6 +169,7 @@ jobs:
           push: true
           tags: |
             neondatabase/neon_local:latest
-            neondatabase/neon_local:${{ github.sha }}
+            neondatabase/neon_local:${{ steps.meta.outputs.sha_short }}
+            ${{ steps.meta.outputs.is_release == 'true' && format('neondatabase/neon_local:v{0}', steps.meta.outputs.major) || '' }}
+            ${{ steps.meta.outputs.is_release == 'true' && format('neondatabase/neon_local:v{0}', steps.meta.outputs.minor) || '' }}
           platforms: linux/amd64,linux/arm64
-

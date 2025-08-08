@@ -1,22 +1,51 @@
 global
     log stdout format raw local0
     maxconn 4096
+    # Performance optimizations
+    tune.bufsize 32768
+    tune.maxrewrite 1024
 
 defaults
     log global
-    mode http
-    option httplog
-    timeout connect 5s
-    timeout client 50s
-    timeout server 50s
-    option http-keep-alive
-    option http-server-close
+    # Balanced timeouts - fast but not too aggressive for VSCode extension
+    timeout connect 3s
+    timeout client 60s
+    timeout server 60s
+    # TCP optimizations
+    option tcp-smart-accept
+    option tcp-smart-connect
+    # Disable logging for better performance (can be re-enabled for debugging)
+    option dontlog-normal
 
-frontend http_front
+frontend unified_front
     bind *:5432
-    # Backend selection rules will be added here
+    mode tcp
+    # Reduced inspection delay for faster routing decisions
+    tcp-request inspect-delay 100ms
+    tcp-request content accept if { req_len 0 }
+    
+    # Optimized HTTP detection - check fewer bytes, faster patterns
+    acl is_http req.payload(0,4) -m str GET 
+    acl is_http req.payload(0,4) -m str POST
+    acl is_http req.payload(0,3) -m str PUT
+    acl is_http req.payload(0,6) -m str DELETE
+    acl is_http req.payload(0,4) -m str HEAD
+    acl is_http req.payload(0,7) -m str OPTIONS
+    acl is_http req.payload(0,5) -m str PATCH
+    
+    # Route HTTP traffic to HTTP backend, everything else (PostgreSQL) to PgBouncer
+    use_backend http_backend if is_http
+    default_backend pgbouncer_backend
 
+# PgBouncer backend for PostgreSQL connections
+backend pgbouncer_backend
+    mode tcp
+    # Performance optimizations
+    option tcp-check
+    # Faster health checks
+    server pgbouncer1 127.0.0.1:6432 check inter 2s fastinter 500ms downinter 1s rise 1 fall 2
+
+# HTTP backend for serverless driver traffic
 backend http_backend
-    server ws_server1 {host}:443 ssl verify none sni str({host}) check
-    http-request set-header Neon-Connection-String "postgresql://{role}:{password}@{host}/{database}?sslmode=require"
-    http-request set-header Host {host}
+    mode http
+    # Backend selection rules will be added here
