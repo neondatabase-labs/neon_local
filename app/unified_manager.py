@@ -2,6 +2,9 @@ import os
 import json
 import subprocess
 import threading
+import time
+import socket
+import requests
 from app.process_manager import ProcessManager
 from app.neon import NeonAPI
 
@@ -98,6 +101,9 @@ class UnifiedManager(ProcessManager):
                 "haproxy", "-f", "/tmp/haproxy.cfg"
             ], stdout=log, stderr=log)
         
+        # Wait for services to be healthy before declaring ready
+        self._wait_for_services_healthy()
+        
         print("Neon Local is ready - HAProxy and PgBouncer are both running")
 
     def stop_process(self):
@@ -191,3 +197,73 @@ class UnifiedManager(ProcessManager):
 
         with open("/tmp/haproxy.cfg", "w") as file:
             file.write(haproxy_config)
+
+    def _is_port_open(self, host, port, timeout=1):
+        """Check if a port is open and accepting connections."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
+    def _check_pgbouncer_health(self):
+        """Check if PgBouncer is healthy and accepting connections."""
+        # PgBouncer runs on internal port 6432
+        return self._is_port_open('127.0.0.1', 6432)
+
+    def _check_haproxy_health(self):
+        """Check if HAProxy is healthy and accepting connections."""
+        # HAProxy runs on port 5432
+        if not self._is_port_open('127.0.0.1', 5432):
+            return False
+        
+        # Additional check: try a simple HTTP request to ensure HTTP backend is working
+        try:
+            response = requests.get('http://127.0.0.1:5432', timeout=2)
+            # We expect this to fail with a specific error, but it should connect
+            return True
+        except requests.exceptions.ConnectionError:
+            # If connection is refused, HAProxy is not ready
+            return False
+        except Exception:
+            # Other exceptions (like HTTP errors) are fine - it means HAProxy is responding
+            return True
+
+    def _wait_for_services_healthy(self, max_wait_time=30, check_interval=0.5):
+        """Wait for both PgBouncer and HAProxy to be healthy before proceeding."""
+        print("Waiting for services to be healthy...")
+        
+        start_time = time.time()
+        pgbouncer_ready = False
+        haproxy_ready = False
+        
+        while time.time() - start_time < max_wait_time:
+            if not pgbouncer_ready:
+                pgbouncer_ready = self._check_pgbouncer_health()
+                if pgbouncer_ready:
+                    print("✓ PgBouncer is healthy")
+            
+            if not haproxy_ready:
+                haproxy_ready = self._check_haproxy_health()
+                if haproxy_ready:
+                    print("✓ HAProxy is healthy")
+            
+            if pgbouncer_ready and haproxy_ready:
+                print("✓ All services are healthy and ready for traffic")
+                return True
+            
+            time.sleep(check_interval)
+        
+        # If we get here, services didn't become healthy in time
+        pgbouncer_status = "✓" if pgbouncer_ready else "✗"
+        haproxy_status = "✓" if haproxy_ready else "✗"
+        
+        print(f"⚠️  Health check timeout after {max_wait_time}s:")
+        print(f"   PgBouncer (port 6432): {pgbouncer_status}")
+        print(f"   HAProxy (port 5432): {haproxy_status}")
+        print("Services may not be fully ready for traffic")
+        
+        return False

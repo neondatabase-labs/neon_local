@@ -1,0 +1,17 @@
+{
+  "name": "neon-local-test",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Test script for Neon Local proxy routing",
+  "main": "test_neon_routing.js",
+  "scripts": {
+    "test": "node test_neon_routing.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.6"
+  }
+}

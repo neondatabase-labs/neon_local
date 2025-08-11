@@ -1,3 +1,4 @@
 .neon.local
 .env
 app/haproxy/tests/node_modules
+node_modules/
