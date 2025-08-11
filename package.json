@@ -9,7 +9,11 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
-    "pg": "^8.11.3"
+    "@prisma/adapter-neon": "^6.13.0",
+    "@prisma/client": "^6.13.0",
+    "drizzle-orm": "^0.33.0",
+    "pg": "^8.11.3",
+    "prisma": "^6.13.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.6"

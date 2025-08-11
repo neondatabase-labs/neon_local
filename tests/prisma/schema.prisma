@@ -1,0 +1,21 @@
+// Prisma schema for testing with Neon Local proxy
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TestRecord {
+  id        Int      @id @default(autoincrement())
+  driver    String
+  timestamp DateTime @default(now())
+  status    String
+  message   String?
+
+  @@map("test_records")
+}

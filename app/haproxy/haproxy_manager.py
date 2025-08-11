@@ -73,42 +73,91 @@ class HAProxyManager(ProcessManager):
         app_name = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
         user_agent_suffix = "_neon_local_vscode_container" if client == "vscode" else "_neon_local_container"
         
-        # Split the template into sections
-        sections = haproxy_template.split("backend http_backend")
-        frontend_section = sections[0].strip()
-        backend_template = sections[1].strip()
+        # Find where to insert the database-specific configuration
+        # Look for the comment "# Backend selection rules will be added here"
+        replacement_marker = "# Backend selection rules will be added here"
         
-        # Add global ACLs first
-        frontend_section += "\n    acl is_sql path_beg /sql"
+        if replacement_marker not in haproxy_template:
+            raise ValueError(f"Template marker '{replacement_marker}' not found in haproxy.cfg.tmpl")
         
-        # Generate backend sections for each database
+        # Split template at the replacement marker
+        template_parts = haproxy_template.split(replacement_marker)
+        template_before = template_parts[0]
+        template_after = template_parts[1] if len(template_parts) > 1 else ""
+        
+        # Build the database-specific frontend ACLs
+        frontend_acls = "\n    # Database-specific ACLs\n    acl is_sql path_beg /sql"
+        
+        # Generate backend sections and frontend routing rules for each database
         backend_sections = []
+        frontend_routing_rules = ""
+        
         for db in databases:
             backend_name = f"backend_{db['database']}"
-            # Create backend section with proper structure
+            
+            # Add frontend ACLs and routing rules for this database
+            frontend_acls += f"""
+    acl is_{db['database']} path_beg /{db['database']}
+    acl is_{db['database']}_connection hdr(Neon-Connection-String) -m reg -i {db['database']}"""
+            
+            frontend_routing_rules += f"""
+    use_backend {backend_name} if is_{db['database']} or is_sql is_{db['database']}_connection"""
+            
+            # Create backend section with HTTP/1.1 keep-alive support  
             backend_config = f"""
 backend {backend_name}
-    server ws_server1 {db['host']}:443 ssl verify none sni str({db['host']}) check
+    mode http
+    
+    # Optimized timeouts for faster response
+    timeout connect 3s
+    timeout client 30s
+    timeout server 30s
+    timeout http-request 8s
+    timeout http-keep-alive 5s
+    timeout check 3s
+    
+    # HTTP/1.1 Keep-Alive options
+    option http-keep-alive
+    option prefer-last-server
+    option http-pretend-keepalive
+    option http-server-close
+    option httplog
+    
+    # Error handling optimizations
+    option redispatch
+    retries 2
+    
+    # Backend server configuration with connection optimizations
+    server ws_server1 {db['host']}:443 ssl verify none sni str({db['host']}) check maxconn 100 check inter 2s fastinter 1s downinter 2s rise 1 fall 2 
+    
+    # HTTP/1.1 Keep-Alive headers and request modification
     http-request set-header Neon-Connection-String "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name={app_name}"
     http-request set-header Host {db['host']}
     http-request set-header User-Agent "%[req.hdr(User-Agent)]{user_agent_suffix}"
+    http-request set-header Connection "keep-alive"
+    
+    # Response headers for client keep-alive support
+    http-response set-header Connection "keep-alive"
+    http-response set-header Keep-Alive "timeout=30, max=100"
+    http-response set-header Cache-Control "no-cache, no-store, must-revalidate"
+    
+    # Ensure proper HTTP/1.1 handling
+    http-response set-header Server "HAProxy-Neon-Local"
 """
             backend_sections.append(backend_config)
-            
-            # Add database-specific ACLs and rules
-            frontend_section += f"""
-    acl is_{db['database']} path_beg /{db['database']}
-    acl is_{db['database']}_connection hdr(Neon-Connection-String) -m reg -i {db['database']}
-    use_backend {backend_name} if is_{db['database']} or is_sql is_{db['database']}_connection"""
         
         # Add default backend rule using the first database
         if databases:
             first_db = databases[0]
             default_backend = f"backend_{first_db['database']}"
-            frontend_section += f"\n    default_backend {default_backend}"
+            frontend_routing_rules += f"\n    default_backend {default_backend}"
         
-        # Combine all sections with proper spacing
-        haproxy_config = frontend_section + "\n\n" + "\n".join(backend_sections) + "\n"
+        # Inject the database-specific configuration into the template
+        database_config = frontend_acls + frontend_routing_rules
+        backend_config_section = "\n\n" + "\n".join(backend_sections)
+        
+        # Combine template parts with generated configuration
+        haproxy_config = template_before + database_config + template_after + backend_config_section
 
         with open("/tmp/haproxy.cfg", "w") as file:
             file.write(haproxy_config)
