@@ -173,4 +173,3 @@ jobs:
             ${{ steps.meta.outputs.is_release == 'true' && format('neondatabase/neon_local:v{0}', steps.meta.outputs.major) || '' }}
             ${{ steps.meta.outputs.is_release == 'true' && format('neondatabase/neon_local:v{0}', steps.meta.outputs.minor) || '' }}
           platforms: linux/amd64,linux/arm64
-

@@ -1,5 +1,9 @@
 services:
   neon_local:
+    # Use major version for production, or specify minor version like ghcr.io/neondatabase-labs/neon_local:v1.2
+    # Available tags: latest, v1, v1.2, <short-sha>
+    # image: ghcr.io/neondatabase-labs/neon_local:v1
+    # Uncomment the line below for local development
     build: app/
     ports:
       - "5432:5432"

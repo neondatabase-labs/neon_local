@@ -1,22 +1,83 @@
 global
     log stdout format raw local0
     maxconn 4096
+    # Performance optimizations
+    tune.bufsize 32768
+    tune.maxrewrite 1024
 
 defaults
     log global
-    mode http
-    option httplog
-    timeout connect 5s
-    timeout client 50s
-    timeout server 50s
-    option http-keep-alive
-    option http-server-close
+    # Balanced timeouts - fast but not too aggressive for VSCode extension
+    timeout connect 3s
+    timeout client 60s
+    timeout server 60s
+    # TCP optimizations
+    option tcp-smart-accept
+    option tcp-smart-connect
+    # Disable logging for better performance (can be re-enabled for debugging)
+    option dontlog-normal
 
-frontend http_front
+# Remove problematic HTTP defaults section to avoid inheritance issues
+
+frontend unified_front
     bind *:5432
-    # Backend selection rules will be added here
+    mode tcp
+    # Optimized inspection delay - reduced for faster response
+    tcp-request inspect-delay 200ms
+    tcp-request content accept if { req_len 0 }
+    
+    # Enhanced HTTP detection - use regex for all HTTP methods  
+    acl is_http_method req.payload(0,10) -m reg -i "^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) "
+    acl is_http11 req.payload(0,100) -m reg -i "HTTP/1\.[01]"
+    acl has_host_header req.payload(0,200) -m reg -i "Host:"
+    
+    # Route HTTP traffic to HTTP backend with improved detection
+    use_backend http_backend if is_http_method is_http11
+    use_backend http_backend if is_http_method has_host_header
+    default_backend pgbouncer_backend
 
+# PgBouncer backend for PostgreSQL connections
+backend pgbouncer_backend
+    mode tcp
+    # Performance optimizations
+    option tcp-check
+    # Faster health checks
+    server pgbouncer1 127.0.0.1:6432 check inter 2s fastinter 500ms downinter 1s rise 1 fall 2
+
+# HTTP backend for serverless driver traffic
 backend http_backend
-    server ws_server1 {host}:443 ssl verify none sni str({host}) check
-    http-request set-header Neon-Connection-String "postgresql://{role}:{password}@{host}/{database}?sslmode=require"
-    http-request set-header Host {host}
+    mode http
+    
+    # Optimized timeouts for faster response
+    timeout connect 3s                 # Faster backend connection
+    timeout client 30s
+    timeout server 30s
+    timeout http-request 8s            # Reduced for faster failure detection
+    timeout http-keep-alive 5s         # Longer keep-alive for better reuse
+    timeout check 3s                   # Faster health checks
+    
+    # HTTP/1.1 Keep-Alive options
+    option http-keep-alive             # Enable HTTP keep-alive to clients
+    option prefer-last-server          # Stick to same backend server for keep-alive
+    option http-pretend-keepalive      # Add Connection: keep-alive to backend requests
+    option http-server-close           # Close server connections after response
+    
+    # HTTP logging and error handling
+    option httplog                     # Enable HTTP request logging
+    
+    # Connection pooling and persistence
+    stick-table type ip size 100k expire 60s  # Longer connection tracking
+    stick on src                       # Stick clients to same backend server
+    
+    # Load balancing algorithm optimized for keep-alive
+    balance leastconn                  # Use least connections algorithm
+    
+    # Error handling and retries - more aggressive for first connections
+    option redispatch                  # Allow redispatch on connection failure
+    retries 2                          # Reduced retries but faster
+    
+    # Compression support
+    compression algo gzip
+    compression type text/html text/plain text/css text/javascript application/json
+    
+    # Backend selection rules will be added here

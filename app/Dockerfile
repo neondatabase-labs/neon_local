@@ -16,6 +16,7 @@ COPY /haproxy/haproxy.cfg.tmpl /scripts/app/haproxy.cfg.tmpl
 COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
+COPY unified_manager.py /scripts/app/unified_manager.py
 COPY /pgbouncer/pgbouncer_manager.py /scripts/app/pgbouncer_manager.py
 COPY /haproxy/haproxy_manager.py /scripts/app/haproxy_manager.py
 RUN touch /scripts/app/__init__.py
