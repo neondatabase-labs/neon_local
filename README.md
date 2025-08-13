@@ -104,13 +104,9 @@ db:
 
 ## Multi-driver support
 
-The Neon Local container supports both the `postgres` and Neon `serverless` drivers.  
-If no driver is configured, `postgres` is used by default.
+The Neon Local container now supports both the `postgres` and Neon `serverless` drivers simultaneously through a single connection string. You no longer need to specify a driver or configure different connection strings for different drivers.
 
-Set the driver using the `DRIVER` environment variable:
 
-- `postgres`
-- `serverless`
 
 ## Connecting your app (Postgres driver)
 
@@ -132,11 +128,14 @@ postgres://neon:npg@db:5432/<database_name>?sslmode=no-verify
 
 Connect using the Neon [serverless driver](https://neon.tech/docs/serverless/serverless-driver).
 
+
 ### Docker run
 
 ```javascript
 import { neon, neonConfig } from '@neondatabase/serverless';
+
 neonConfig.fetchEndpoint = 'http://localhost:5432/sql';
+
 
 const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 ```
@@ -145,12 +144,13 @@ const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 
 ```javascript
 import { neon, neonConfig } from '@neondatabase/serverless';
+
 neonConfig.fetchEndpoint = 'http://db:5432/sql';
 
 const sql = neon('postgres://neon:npg@db:5432/<database_name>');
 ```
 
-When using the serverless driver, set `DRIVER=serverless`:
+No additional environment variables are needed - the same Docker configuration works for both drivers:
 
 ```shell
 docker run \
@@ -158,22 +158,7 @@ docker run \
   -p 5432:5432 \
   -e NEON_API_KEY=<your_neon_api_key> \
   -e NEON_PROJECT_ID=<your_neon_project_id> \
-  -e DRIVER=serverless \
   neondatabase/neon_local:latest
-
-```
-
-Or in Compose:
-
-```yml
-db:
-  image: neondatabase/neon_local:latest
-  ports:
-    - '5432:5432'
-  environment:
-    NEON_API_KEY: ${NEON_API_KEY}
-    NEON_PROJECT_ID: ${NEON_PROJECT_ID}
-    DRIVER: serverless
 ```
 
 ## Environment variables and configuration options
@@ -184,7 +169,7 @@ db:
 | `NEON_PROJECT_ID`  | Your Neon project ID. Found under Project Settings → General in the Neon console. | Yes      | N/A                           |
 | `BRANCH_ID`        | Connect to an existing Neon branch. Mutually exclusive with `PARENT_BRANCH_ID`.   | No       | N/A                           |
 | `PARENT_BRANCH_ID` | Create ephemeral branch from parent. Mutually exclusive with `BRANCH_ID`.         | No       | your project's default branch |
-| `DRIVER`           | Database driver to use. Options: `postgres`, `serverless`.                        | No       | `postgres`                    |
+| `DRIVER`           | **Deprecated** - Both drivers now supported simultaneously.                       | No       | N/A                           |
 | `DELETE_BRANCH`    | Set to `false` to persist branches after container shutdown.                      | No       | `true`                        |
 
 ## Persistent Neon branch per Git branch
