@@ -18,17 +18,35 @@ async function testNeonServerlessDriver() {
         Object.keys(neonConfig.opts).forEach(key => delete neonConfig.opts[key]);
       }
       
-      // Configure Neon for local proxy
+      // Configure Neon for local proxy - disable websockets completely
       neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';
-      neonConfig.useSecureWebSocket = false;
+      neonConfig.webSocketConstructor = undefined;
+      neonConfig.poolQueryViaFetch = true;
       
       // Add a small delay to ensure config is applied
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Use the Neon proxy connection string (localhost works better in combined tests)
+      // Use the standard localhost connection string - proxy should handle the rest
       const sql = neon('postgresql://neon:npg@localhost/neondb');
       
-      const result = await sql`SELECT 1 as test_value, 'Hello from Neon!' as message, NOW() as timestamp`;
+      // Ensure the users table exists with test data
+      await sql`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255)
+        )
+      `;
+      
+      // Insert test data if table is empty
+      await sql`
+        INSERT INTO users (name) 
+        SELECT * FROM (VALUES 
+          ('Mo'), ('Larry'), ('Curly'), ('Curly Joe'), ('Shep')
+        ) AS v(name)
+        WHERE NOT EXISTS (SELECT 1 FROM users LIMIT 1)
+      `;
+      
+      const result = await sql`SELECT * from public.users;`;
       
       console.log('✅ PASS - Neon Serverless Driver Test');
       console.log('  Result:', result);

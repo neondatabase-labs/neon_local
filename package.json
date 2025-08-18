@@ -1,6 +1,6 @@
 {
   "name": "neon-local-test",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Test script for Neon Local proxy routing",
   "main": "test_neon_routing.js",
@@ -13,7 +13,8 @@
     "@prisma/client": "^6.13.0",
     "drizzle-orm": "^0.33.0",
     "pg": "^8.11.3",
-    "prisma": "^6.13.0"
+    "prisma": "^6.13.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/pg": "^8.11.6"

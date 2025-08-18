@@ -1,41 +1,86 @@
 #!/usr/bin/env node
 
-// Test: Prisma ORM through HTTP proxy endpoint
-import { PrismaClient } from '@prisma/client';
+// Test: Prisma ORM with Neon adapter through HTTP proxy endpoint
+import { config } from 'dotenv'
+
+// Load environment variables from parent directory FIRST
+config({ path: '../.env' });
+
+// Set NODE_ENV to development BEFORE importing Neon modules
+process.env.NODE_ENV = 'development';
+
+import { neonConfig } from '@neondatabase/serverless'
+import ws from 'ws';
+
+// Configure Neon for local development - HTTP only, no WebSockets
+// Do this BEFORE importing PrismaClient or PrismaNeon
+neonConfig.fetchEndpoint = 'http://localhost:5432/sql'
+neonConfig.poolQueryViaFetch = true  // Force HTTP queries instead of WebSocket
+
+// WebSocket constructor wrapper that forces connections to localhost:5432
+class LocalWebSocketWrapper extends ws {
+  constructor(address, protocols, options) {
+    // Parse the original URL to extract just the path and query
+    const originalUrl = new URL(address.toString());
+    
+    // Create new URL with localhost:5432 but preserve path and query
+    const localUrl = new URL(originalUrl.pathname + originalUrl.search, 'ws://localhost:5432');
+    
+    console.log(`WebSocket redirected from ${address} to ${localUrl.toString()}`);
+    
+    super(localUrl.toString(), protocols, options);
+  }
+}
+
+neonConfig.webSocketConstructor = LocalWebSocketWrapper;
+
+// NOW import Prisma modules after Neon is configured
+import { PrismaClient } from '@prisma/client'
+import { PrismaNeon } from '@prisma/adapter-neon'
+import { neon } from '@neondatabase/serverless'
+
+const globalForPrisma = globalThis;
+
+// Create Prisma client with Neon adapter
+// The neonConfig settings above will be used by the adapter internally
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL })
+export const prisma = 
+  globalForPrisma.prisma ??
+  new PrismaClient({ adapter })
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma 
 
 async function testPrismaNeonHttp() {
-  console.log('🧪 Test: Prisma + Neon HTTP');
+  console.log('🧪 Test: Prisma + Neon HTTP (with Neon Adapter)');
 
   const maxRetries = 3;
   const retryDelay = 2000; // 2 seconds
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    let prisma = null;
-    
     try {
-      console.log(`  📡 Attempt ${attempt}/${maxRetries}: Testing Prisma via HTTP proxy...`);
+      console.log(`  📡 Attempt ${attempt}/${maxRetries}: Testing Prisma with Neon adapter via HTTP proxy...`);
       
-      // Initialize Prisma client to connect through the proxy using HTTP
-      // This will use standard PostgreSQL protocol through the proxy
-      prisma = new PrismaClient({
-        datasources: {
-          db: {
-            url: 'postgresql://neon:npg@localhost:5432/neondb?sslmode=require'
-          }
-        },
-        log: ['error'] // Only log errors to reduce noise
-      });
+      // Ensure the test_records table exists
+      await prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS test_records (
+          id SERIAL PRIMARY KEY,
+          driver VARCHAR(255),
+          timestamp TIMESTAMP DEFAULT NOW(),
+          status VARCHAR(50),
+          message TEXT
+        )
+      `;
       
       // Test the connection and insert a record
       const result = await prisma.testRecord.create({
         data: {
-          driver: 'Prisma via HTTP Proxy',
+          driver: 'Prisma + Neon Adapter via HTTP Proxy',
           status: 'success',
-          message: 'HTTP proxy connection successful'
+          message: 'HTTP proxy connection with Neon adapter successful'
         }
       });
       
-      console.log('✅ PASS - Prisma via HTTP Proxy Test');
+      console.log('✅ PASS - Prisma + Neon Adapter HTTP Test');
       console.log('  Result:', JSON.stringify(result, null, 2));
       
       // Clean up
@@ -46,16 +91,14 @@ async function testPrismaNeonHttp() {
       console.log(`  ⚠️  Attempt ${attempt} failed: ${error.message}`);
       
       // Clean up on error
-      if (prisma) {
-        try {
-          await prisma.$disconnect();
-        } catch (cleanupError) {
-          // Ignore cleanup errors
-        }
+      try {
+        await prisma.$disconnect();
+      } catch (cleanupError) {
+        // Ignore cleanup errors
       }
       
       if (attempt === maxRetries) {
-        console.log('❌ FAIL - Prisma via HTTP Proxy Test');
+        console.log('❌ FAIL - Prisma + Neon Adapter HTTP Test');
         console.log('  Final error:', error.message);
         console.log('  Error details:', error.code || 'No error code');
         process.exit(1);

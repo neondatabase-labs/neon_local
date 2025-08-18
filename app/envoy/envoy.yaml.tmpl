@@ -1,0 +1,191 @@
+admin:
+  address:
+    socket_address:
+      protocol: TCP
+      address: 127.0.0.1
+      port_value: 9901
+
+static_resources:
+  listeners:
+  - name: unified_listener
+    address:
+      socket_address:
+        protocol: TCP
+        address: 0.0.0.0
+        port_value: 5432
+    listener_filters:
+    - name: envoy.filters.listener.http_inspector
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector
+    filter_chains:
+    # HTTP filter chain - handles Neon serverless traffic (when HTTP is detected)
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: neon_http
+          access_log:
+          - name: envoy.access_loggers.stdout
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+          http_filters:
+          - name: envoy.filters.http.header_to_metadata
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.header_to_metadata.v3.Config
+          # Lua filter to override host header restrictions  
+          - name: envoy.filters.http.lua
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+              inline_code: |
+                function envoy_on_request(request_handle)
+                  local path = request_handle:headers():get(":path")
+                  local upgrade_header = request_handle:headers():get("upgrade")
+                  local is_websocket = upgrade_header and string.lower(upgrade_header) == "websocket"
+                  
+                  -- Handle both HTTP /sql requests and WebSocket connections to Neon
+                  if path == "/sql" or is_websocket then
+                    -- Set the real Neon hostname
+                    local host = "PLACEHOLDER_NEON_HOST"
+                    request_handle:headers():replace(":authority", host)
+                    request_handle:headers():replace("host", host)
+                    
+                    -- Log connection type and headers
+                    if is_websocket then
+                      request_handle:logInfo("Lua filter: Processing WebSocket connection to Neon")
+                    else
+                      request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
+                    end
+                    
+                    local headers = request_handle:headers()
+                    for key, value in pairs(headers) do
+                      if key and value then
+                        request_handle:logInfo("Lua filter: Header " .. tostring(key) .. ": " .. tostring(value))
+                      end
+                    end
+                    
+                    -- Force override the neon-connection-string header for credential injection
+                    local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
+                    request_handle:headers():replace("neon-connection-string", real_conn_str)
+                    
+                    -- For WebSocket connections, also check for any connection string in query parameters
+                    if is_websocket then
+                      local query_string = request_handle:headers():get(":path")
+                      if query_string and string.find(query_string, "?") then
+                        -- Extract and potentially modify query parameters if needed
+                        request_handle:logInfo("Lua filter: WebSocket query string: " .. query_string)
+                      end
+                    end
+                    
+                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
+                  end
+                end
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          route_config:
+            name: neon_routes
+            virtual_hosts:
+            - name: neon_backend
+              domains: ["*"]
+              request_headers_to_add:
+              - header:
+                  key: "content-type"
+                  value: "application/json"
+              - header:
+                  key: "connection"
+                  value: "keep-alive"
+              routes:
+              # Database-specific routes will be injected here
+              
+              # WebSocket route - matches any path with WebSocket upgrade header
+              - match:
+                  prefix: "/"
+                  headers:
+                  - name: "upgrade"
+                    string_match:
+                      exact: "websocket"
+                route:
+                  cluster: neon_cluster_default
+                  timeout: 0s  # No timeout for WebSocket connections
+                  upgrade_configs:
+                  - upgrade_type: "websocket"
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "PLACEHOLDER_NEON_CONNECTION_STRING"
+              
+              # Default route for /sql endpoint  
+              - match:
+                  path: "/sql"
+                route:
+                  cluster: neon_cluster_default
+                  timeout: 30s
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "PLACEHOLDER_NEON_CONNECTION_STRING"
+                - header:
+                    key: "user-agent"
+                    value: "PLACEHOLDER_USER_AGENT"
+              # Route based on Neon headers
+              - match:
+                  prefix: "/"
+                  headers:
+                  - name: "neon-connection-string"
+                    present_match: true
+                route:
+                  cluster: neon_cluster_default
+                  timeout: 30s
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "PLACEHOLDER_NEON_CONNECTION_STRING"
+                - header:
+                    key: "user-agent"
+                    value: "PLACEHOLDER_USER_AGENT"
+              # Fallback - return error for non-Neon HTTP requests
+              - match:
+                  prefix: "/"
+                direct_response:
+                  status: 400
+                  body:
+                    inline_string: "This endpoint only supports Neon serverless connections"
+      # Match HTTP traffic detected by the inspector
+      filter_chain_match:
+        application_protocols: ["http/1.1", "http/1.0"]
+    # TCP filter chain - handles PostgreSQL traffic (default fallback)
+    - filters:
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: postgres_tcp
+          cluster: pgbouncer_cluster
+          access_log:
+          - name: envoy.access_loggers.stdout
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+
+  clusters:
+  # PgBouncer cluster for PostgreSQL connections
+  - name: pgbouncer_cluster
+    connect_timeout: 3s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: pgbouncer_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 6432
+    health_checks:
+    - timeout: 3s
+      interval: 2s
+      interval_jitter: 0.5s
+      unhealthy_threshold: 2
+      healthy_threshold: 1
+      tcp_health_check: {}
+
+  # Database-specific clusters will be injected here
