@@ -38,15 +38,24 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
               inline_code: |
                 function envoy_on_request(request_handle)
-                  -- Check if this is a request to /sql (Neon serverless endpoint)
                   local path = request_handle:headers():get(":path")
-                  if path == "/sql" then
+                  local upgrade_header = request_handle:headers():get("upgrade")
+                  local is_websocket = upgrade_header and string.lower(upgrade_header) == "websocket"
+                  
+                  -- Handle both HTTP /sql requests and WebSocket connections to Neon
+                  if path == "/sql" or is_websocket then
                     -- Set the real Neon hostname
                     local host = "PLACEHOLDER_NEON_HOST"
                     request_handle:headers():replace(":authority", host)
                     request_handle:headers():replace("host", host)
                     
-                    -- Log all headers to understand what the Neon client is sending
+                    -- Log connection type and headers
+                    if is_websocket then
+                      request_handle:logInfo("Lua filter: Processing WebSocket connection to Neon")
+                    else
+                      request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
+                    end
+                    
                     local headers = request_handle:headers()
                     for key, value in pairs(headers) do
                       if key and value then
@@ -54,11 +63,20 @@ static_resources:
                       end
                     end
                     
-                    -- Force override the neon-connection-string header since it should be injected
+                    -- Force override the neon-connection-string header for credential injection
                     local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
                     request_handle:headers():replace("neon-connection-string", real_conn_str)
                     
-                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string")
+                    -- For WebSocket connections, also check for any connection string in query parameters
+                    if is_websocket then
+                      local query_string = request_handle:headers():get(":path")
+                      if query_string and string.find(query_string, "?") then
+                        -- Extract and potentially modify query parameters if needed
+                        request_handle:logInfo("Lua filter: WebSocket query string: " .. query_string)
+                      end
+                    end
+                    
+                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
                   end
                 end
           - name: envoy.filters.http.router
@@ -78,6 +96,23 @@ static_resources:
                   value: "keep-alive"
               routes:
               # Database-specific routes will be injected here
+              
+              # WebSocket route - matches any path with WebSocket upgrade header
+              - match:
+                  prefix: "/"
+                  headers:
+                  - name: "upgrade"
+                    string_match:
+                      exact: "websocket"
+                route:
+                  cluster: neon_cluster_default
+                  timeout: 0s  # No timeout for WebSocket connections
+                  upgrade_configs:
+                  - upgrade_type: "websocket"
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "PLACEHOLDER_NEON_CONNECTION_STRING"
               
               # Default route for /sql endpoint  
               - match:

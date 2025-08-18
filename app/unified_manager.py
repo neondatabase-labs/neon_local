@@ -241,7 +241,7 @@ class UnifiedManager(ProcessManager):
             
             # Create routes for this database
             database_routes += f"""
-              # Routes for {db['database']}
+              # HTTP routes for {db['database']}
               - match:
                   prefix: "/{db['database']}"
                 route:
@@ -270,6 +270,41 @@ class UnifiedManager(ProcessManager):
                 - header:
                     key: "user-agent"
                     value: "node{user_agent_suffix}"
+              
+              # WebSocket routes for {db['database']}
+              - match:
+                  prefix: "/{db['database']}"
+                  headers:
+                  - name: "upgrade"
+                    string_match:
+                      exact: "websocket"
+                route:
+                  cluster: {cluster_name}
+                  timeout: 0s  # No timeout for WebSocket connections
+                  upgrade_configs:
+                  - upgrade_type: "websocket"
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name={app_name}"
+              - match:
+                  prefix: "/"
+                  headers:
+                  - name: "upgrade"
+                    string_match:
+                      exact: "websocket"
+                  - name: "neon-connection-string"
+                    string_match:
+                      contains: "{db['database']}"
+                route:
+                  cluster: {cluster_name}
+                  timeout: 0s  # No timeout for WebSocket connections
+                  upgrade_configs:
+                  - upgrade_type: "websocket"
+                request_headers_to_add:
+                - header:
+                    key: "neon-connection-string"
+                    value: "postgresql://{db['user']}:{db['password']}@{db['host']}/{db['database']}?sslmode=require&application_name={app_name}"
 """
             
             # Create cluster for this database
