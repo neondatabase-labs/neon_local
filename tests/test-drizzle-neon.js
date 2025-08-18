@@ -22,12 +22,13 @@ async function testDrizzleNeonHttp() {
       
       // Configure Neon for local proxy - HTTP mode only (no websockets)
       neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';
-      neonConfig.useSecureWebSocket = false;
+      neonConfig.webSocketConstructor = undefined;
+      neonConfig.poolQueryViaFetch = true;
       
       // Add a small delay to ensure config is applied
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Create Neon connection exactly like working Test 2 
+      // Create Neon connection - proxy should handle credential injection
       const neonSql = neon('postgresql://neon:npg@localhost/neondb');
       
       // Initialize Drizzle with Neon HTTP driver

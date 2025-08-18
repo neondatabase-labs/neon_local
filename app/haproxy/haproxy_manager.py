@@ -59,7 +59,7 @@ class HAProxyManager(ProcessManager):
             self.haproxy_process = None
 
     def _write_haproxy_config(self, databases):
-        template_path = "/scripts/app/haproxy.cfg.tmpl"
+        template_path = "/scripts/app/haproxy/haproxy.cfg.tmpl"
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"HAProxy config template not found at: {template_path}")
 
@@ -67,23 +67,25 @@ class HAProxyManager(ProcessManager):
             haproxy_template = file.read()
 
         print(f"Databases: {databases}")
+        print(f"Debug: Using template at {template_path}")
         
         # Determine application name and user agent suffix based on CLIENT environment variable
         client = os.getenv("CLIENT", "").lower()
         app_name = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
         user_agent_suffix = "_neon_local_vscode_container" if client == "vscode" else "_neon_local_container"
         
-        # Find where to insert the database-specific configuration
-        # Look for the comment "# Backend selection rules will be added here"
-        replacement_marker = "# Backend selection rules will be added here"
+        # Define injection markers (handle both old and new template formats)
+        acl_marker = "    # Database-specific ACLs will be injected here"
+        routing_marker = "    # Database-specific routing rules will be injected here"
+        backend_marker = "# Database-specific backends will be injected here"
         
-        if replacement_marker not in haproxy_template:
-            raise ValueError(f"Template marker '{replacement_marker}' not found in haproxy.cfg.tmpl")
-        
-        # Split template at the replacement marker
-        template_parts = haproxy_template.split(replacement_marker)
-        template_before = template_parts[0]
-        template_after = template_parts[1] if len(template_parts) > 1 else ""
+        # Fallback to old markers if new ones don't exist
+        if acl_marker not in haproxy_template:
+            acl_marker = "    # Route HTTP traffic to database-specific backends (rules will be injected dynamically)"
+        if routing_marker not in haproxy_template:
+            routing_marker = "    # Frontend routing rules will be added here"
+        if backend_marker not in haproxy_template:
+            backend_marker = "# Database-specific backends will be added here"
         
         # Build the database-specific frontend ACLs
         frontend_acls = "\n    # Database-specific ACLs\n    acl is_sql path_beg /sql"
@@ -98,10 +100,13 @@ class HAProxyManager(ProcessManager):
             # Add frontend ACLs and routing rules for this database
             frontend_acls += f"""
     acl is_{db['database']} path_beg /{db['database']}
-    acl is_{db['database']}_connection hdr(Neon-Connection-String) -m reg -i {db['database']}"""
+    acl is_{db['database']}_connection hdr(Neon-Connection-String) -m reg -i {db['database']}
+    acl is_sql_path_for_{db['database']} path_beg /sql"""
             
             frontend_routing_rules += f"""
-    use_backend {backend_name} if is_{db['database']} or is_sql is_{db['database']}_connection"""
+    use_backend {backend_name} if is_{db['database']}
+    use_backend {backend_name} if is_{db['database']}_connection
+    use_backend {backend_name} if is_sql_path_for_{db['database']} is_{db['database']}_connection"""
             
             # Create backend section with HTTP/1.1 keep-alive support  
             backend_config = f"""
@@ -136,6 +141,11 @@ backend {backend_name}
     http-request set-header User-Agent "%[req.hdr(User-Agent)]{user_agent_suffix}"
     http-request set-header Connection "keep-alive"
     
+    # Preserve critical Neon serverless driver headers (pass through from client)
+    # These headers are automatically passed through since we're not removing them
+    # Just ensure Content-Type is properly handled for JSON requests
+    http-request set-header Content-Type "application/json" if !{ hdr(Content-Type) -m found }
+    
     # Response headers for client keep-alive support
     http-response set-header Connection "keep-alive"
     http-response set-header Keep-Alive "timeout=30, max=100"
@@ -146,18 +156,39 @@ backend {backend_name}
 """
             backend_sections.append(backend_config)
         
-        # Add default backend rule using the first database
+        # Add fallback routing for HTTP requests without specific database headers
         if databases:
             first_db = databases[0]
             default_backend = f"backend_{first_db['database']}"
-            frontend_routing_rules += f"\n    default_backend {default_backend}"
+            frontend_routing_rules += f"""
+    # Fallback HTTP routing for requests without specific database headers
+    use_backend {default_backend} if is_http_method is_http11
+    use_backend {default_backend} if is_http_method has_host_header
+    use_backend {default_backend} if is_sql_path
+    use_backend {default_backend} if is_post_method"""
         
-        # Inject the database-specific configuration into the template
-        database_config = frontend_acls + frontend_routing_rules
-        backend_config_section = "\n\n" + "\n".join(backend_sections)
+        # Create the database-specific backends section
+        database_backends = "\n".join(backend_sections)
         
-        # Combine template parts with generated configuration
-        haproxy_config = template_before + database_config + template_after + backend_config_section
+        # Debug output
+        print(f"Debug: Generated ACLs: {frontend_acls}")
+        print(f"Debug: Generated routing rules: {frontend_routing_rules}")
+        print(f"Debug: Generated backends count: {len(backend_sections)}")
+        
+        # Inject configurations into template
+        haproxy_config = haproxy_template
+        
+        # Inject ACLs before routing rules (combine with the ACL marker line)
+        acl_injection = acl_marker + frontend_acls
+        haproxy_config = haproxy_config.replace(acl_marker, acl_injection)
+        
+        # Inject routing rules  
+        routing_injection = routing_marker + frontend_routing_rules
+        haproxy_config = haproxy_config.replace(routing_marker, routing_injection)
+        
+        # Inject backends
+        backend_injection = backend_marker + "\n" + database_backends
+        haproxy_config = haproxy_config.replace(backend_marker, backend_injection)
 
         with open("/tmp/haproxy.cfg", "w") as file:
             file.write(haproxy_config)
