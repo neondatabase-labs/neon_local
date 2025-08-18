@@ -15,7 +15,6 @@ import ws from 'ws';
 // Configure Neon for local development - HTTP only, no WebSockets
 // Do this BEFORE importing PrismaClient or PrismaNeon
 neonConfig.fetchEndpoint = 'http://localhost:5432/sql'
-neonConfig.useSecureWebSocket = false
 neonConfig.poolQueryViaFetch = true  // Force HTTP queries instead of WebSocket
 
 // WebSocket constructor wrapper that forces connections to localhost:5432
@@ -60,6 +59,17 @@ async function testPrismaNeonHttp() {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`  📡 Attempt ${attempt}/${maxRetries}: Testing Prisma with Neon adapter via HTTP proxy...`);
+      
+      // Ensure the test_records table exists
+      await prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS test_records (
+          id SERIAL PRIMARY KEY,
+          driver VARCHAR(255),
+          timestamp TIMESTAMP DEFAULT NOW(),
+          status VARCHAR(50),
+          message TEXT
+        )
+      `;
       
       // Test the connection and insert a record
       const result = await prisma.testRecord.create({
