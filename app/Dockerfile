@@ -1,38 +1,89 @@
-# Start with official Envoy image (Debian-based with glibc)
-FROM envoyproxy/envoy:v1.28-latest
+# Multi-stage: Extract Envoy, then use minimal Ubuntu base (half the size of full Envoy image)
+FROM envoyproxy/envoy:v1.28-latest AS envoy-source
+
+# Minimal Ubuntu 20.04 base (same version as Envoy, but without all the extras)
+FROM ubuntu:20.04
 
 USER root
 
-# Install PgBouncer and PostgreSQL from the working version
-RUN apt-get update && apt-get install -y \
-    curl \
-    gnupg \
+# Install only essential packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Runtime dependencies
     python3 \
-    python3-pip \
     python3-requests \
     python3-yaml \
     openssl \
     postgresql-client \
-    wget \
     sudo \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build PgBouncer from source to get latest version with SNI support
-RUN apt-get update && apt-get install -y \
+    libevent-2.1-7 \
+    libc-ares2 \
+    libssl1.1 \
+    ca-certificates \
+    # Build dependencies (will be removed)
     build-essential \
     libevent-dev \
     libssl-dev \
     pkg-config \
     libc-ares-dev \
-    && wget https://pgbouncer.github.io/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -O /tmp/pgbouncer.tar.gz \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Envoy binary from official image (avoid downloading/extracting)
+COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
+COPY --from=envoy-source /usr/local/bin/su-exec /usr/local/bin/su-exec
+
+# Build PgBouncer from source and aggressively clean up
+RUN wget https://pgbouncer.github.io/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -O /tmp/pgbouncer.tar.gz \
     && cd /tmp && tar -xzf pgbouncer.tar.gz \
     && cd pgbouncer-1.24.1 \
     && ./configure --prefix=/usr/local \
     && make && make install \
+    && cd / \
     && rm -rf /tmp/* \
-    && apt-get remove -y build-essential pkg-config \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
+    # Remove ALL build dependencies and related packages
+    && apt-get remove --purge -y \
+        build-essential \
+        gcc \
+        gcc-* \
+        g++ \
+        g++-* \
+        cpp \
+        cpp-* \
+        libc6-dev \
+        linux-libc-dev \
+        pkg-config \
+        libevent-dev \
+        libssl-dev \
+        libc-ares-dev \
+        wget \
+        dpkg-dev \
+        binutils \
+        binutils-* \
+        make \
+        patch \
+        perl \
+        perl-* \
+    && apt-get autoremove --purge -y \
+    && apt-get clean \
+    # Aggressive cleanup of caches, docs, and unused files
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/* \
+    && rm -rf /var/cache/debconf/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/* \
+    && rm -rf /usr/share/doc/* \
+    && rm -rf /usr/share/man/* \
+    && rm -rf /usr/share/info/* \
+    && rm -rf /usr/share/locale/* \
+    && rm -rf /usr/lib/python*/test \
+    && rm -rf /usr/lib/python*/unittest \
+    && rm -rf /usr/lib/python*/distutils \
+    && rm -rf /usr/lib/python*/lib2to3 \
+    && rm -rf /usr/lib/python*/ensurepip \
+    && find /usr/lib/python* -name "*.pyc" -delete \
+    && find /usr/lib/python* -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true \
+    # Remove any leftover .a static libraries
+    && find /usr -name "*.a" -delete 2>/dev/null || true
 
 # Force IPv4-only DNS resolution
 RUN echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
@@ -79,12 +130,8 @@ RUN touch /var/log/pgbouncer.log \
     && chown postgres:postgres /var/log/pgbouncer.log /var/log/envoy.log \
     && chmod 644 /var/log/pgbouncer.log /var/log/envoy.log
 
-# Stay as root for startup script, then switch to postgres in the script
 USER root
-
 WORKDIR /scripts
-
-# Expose the main proxy port
 EXPOSE 5432
 
 ENTRYPOINT []
