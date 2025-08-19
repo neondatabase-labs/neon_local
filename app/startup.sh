@@ -56,15 +56,9 @@ try:
         except Exception as e:
             print(f'Error with specific branch: {e}')
     
-    # If that fails, try the fetch_or_create_branch method like unified_manager does
+    # If that fails, don't create branches here - let the main application handle it
     if not params:
-        try:
-            # Simulate what unified_manager does
-            state = {}  # Empty state for now
-            current_branch = 'main'  # Default branch
-            params, updated_state = api.fetch_or_create_branch(state, current_branch, vscode=False)
-        except Exception as e:
-            print(f'Error with fetch_or_create_branch: {e}')
+        print('No specific branch provided, main application will handle branch creation')
     
     if params:
         print('Found database parameters, updating /etc/hosts...')
@@ -91,7 +85,7 @@ try:
         else:
             print('No IPv4 entries to add')
     else:
-        print('No database parameters found')
+        print('No specific database parameters found - application will create/use branch and update /etc/hosts dynamically')
 except Exception as e:
     print(f'Error getting database parameters: {e}')
 "
@@ -101,5 +95,42 @@ cat /etc/hosts
 
 echo "Switching to postgres user and starting application..."
 
-# Switch to postgres user and run the Python application
-exec su postgres -c "cd /scripts && python3 -m app.entrypoint"
+# Function to handle signals and forward them to the Python process
+cleanup() {
+    echo "Startup script received shutdown signal, forwarding to Python process..."
+    
+    # Find the actual Python process PID (not the su wrapper)
+    python_pid=$(pgrep -f "python3 -m app.entrypoint" || echo "")
+    if [ ! -z "$python_pid" ]; then
+        echo "Found Python process with PID: $python_pid"
+        kill -TERM $python_pid 2>/dev/null
+        
+        # Wait for Python process to handle cleanup
+        sleep 3
+        
+        # Check if it's still running
+        if kill -0 $python_pid 2>/dev/null; then
+            echo "Python process still running, sending SIGKILL..."
+            kill -KILL $python_pid 2>/dev/null
+        fi
+    else
+        echo "No Python process found"
+    fi
+    
+    # Also kill the su process if it exists
+    if [ ! -z "$SU_PID" ]; then
+        kill -TERM $SU_PID 2>/dev/null
+    fi
+    
+    exit 0
+}
+
+# Set up signal handling
+trap cleanup SIGTERM SIGINT
+
+# Switch to postgres user and run the Python application in background
+su postgres -c "cd /scripts && python3 -m app.entrypoint" &
+SU_PID=$!
+
+# Wait for the su process to complete
+wait $SU_PID
