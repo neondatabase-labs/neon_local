@@ -10,10 +10,11 @@ auth_file = /etc/pgbouncer/userlist.txt
 # Performance optimized pooling mode - transaction mode for better ORM compatibility
 pool_mode = transaction
 max_client_conn = 200
-# Increased pool sizes for better performance
-default_pool_size = 50
-min_pool_size = 20
-reserve_pool_size = 10
+# Pool sizes optimized for Neon serverless - allow scaling to zero
+default_pool_size = 25
+# Allow all connections to close for Neon scale-to-zero
+min_pool_size = 0
+reserve_pool_size = 5
 
 # SSL configuration
 client_tls_sslmode = require
@@ -26,12 +27,16 @@ server_connect_timeout = 15
 query_timeout = 60
 query_wait_timeout = 120
 client_idle_timeout = 0
-server_idle_timeout = 600
+# 5 minutes - close server connections before Neon scales down
+server_idle_timeout = 300
 
-# Reduced logging for better performance (can be re-enabled for debugging)
-log_connections = 0
-log_disconnections = 0
+# Moderate logging for Neon scale-to-zero monitoring
+# Log connections to monitor database wake-ups
+log_connections = 1
+# Log disconnections to monitor scale-down behavior  
+log_disconnections = 1
 log_pooler_errors = 1
+# Disable stats and verbose logging to prevent startup issues
 log_stats = 0
 verbose = 0
 
