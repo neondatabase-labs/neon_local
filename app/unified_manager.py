@@ -112,6 +112,14 @@ class UnifiedManager(ProcessManager):
             except Exception as e:
                 print(f"Failed to update /etc/hosts at runtime: {e}")
                 
+        print("Starting wsproxy...")
+        wsproxy_env = os.environ.copy()
+        wsproxy_env['LISTEN_PORT'] = ':4433'
+        wsproxy_env['ALLOW_ADDR_REGEX'] = '.*'
+        self.envoy_process = subprocess.Popen([
+          "/usr/local/bin/wsproxy"
+        ], env=wsproxy_env)
+
         # Start PgBouncer first (on internal port 6432)
         print("Starting PgBouncer...")
         

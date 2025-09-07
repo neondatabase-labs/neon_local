@@ -3,6 +3,7 @@ FROM envoyproxy/envoy:v1.28-latest AS envoy-source
 
 # Minimal Ubuntu 20.04 base (same version as Envoy, but without all the extras)
 FROM ubuntu:20.04
+ARG TARGETARCH
 
 USER root
 
@@ -27,6 +28,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libc-ares-dev \
     wget \
     && rm -rf /var/lib/apt/lists/*
+
+# get Go and build wsproxy
+RUN wget https://go.dev/dl/go1.25.1.linux-${TARGETARCH}.tar.gz -O /tmp/go.tar.gz \
+  && cd /tmp && tar -C /usr/local -xzf go.tar.gz \
+  && GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/neondatabase/wsproxy@latest
 
 # Copy Envoy binary from official image (avoid downloading/extracting)
 COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
