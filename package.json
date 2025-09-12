@@ -8,11 +8,11 @@
     "test": "node test_neon_routing.js"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4",
+    "@neondatabase/serverless": "file:../serverless",
     "@prisma/adapter-neon": "^6.13.0",
     "@prisma/client": "^6.13.0",
-    "drizzle-orm": "^0.33.0",
-    "pg": "^8.11.3",
+    "drizzle-orm": "^0.44.5",
+    "pg": "^8.16.3",
     "prisma": "^6.13.0",
     "ws": "^8.18.3"
   },

@@ -15,7 +15,10 @@ const tests = [
   'test-drizzle-neon.js',
   'test-drizzle-postgres.js',
   'test-prisma-postgres.js',
-  'test-prisma-neon.js'
+  'test-prisma-neon.js',
+  'test-websocket-credential-injection.js',
+  'test-neon-driver-websocket.js',
+  'test-websocket-driver-debug.js'
 ];
 
 const testNames = [
@@ -25,7 +28,10 @@ const testNames = [
   'Drizzle + Neon HTTP',
   'Drizzle + PostgreSQL',
   'Prisma + PostgreSQL',
-  'Prisma via HTTP Proxy'
+  'Prisma via HTTP Proxy',
+  'WebSocket Credential Injection',
+  'Neon Driver WebSocket Support',
+  'WebSocket Driver Debug'
 ];
 
 console.log('🚀 Running Neon Local Proxy Tests (Isolated & Robust)\n');

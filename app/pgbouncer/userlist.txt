@@ -1,1 +1,3 @@
 "neon" "npg"
+"neondb_owner" "npg_v5ixyfdUOw1t"
+"*" "*"

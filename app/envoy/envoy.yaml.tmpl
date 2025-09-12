@@ -32,7 +32,7 @@ static_resources:
           - name: envoy.filters.http.header_to_metadata
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.header_to_metadata.v3.Config
-          # Lua filter to override host header restrictions  
+          # Lua filter to override host header restrictions and handle WebSocket credential injection
           - name: envoy.filters.http.lua
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
@@ -56,27 +56,45 @@ static_resources:
                       request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
                     end
                     
-                    local headers = request_handle:headers()
-                    for key, value in pairs(headers) do
-                      if key and value then
-                        request_handle:logInfo("Lua filter: Header " .. tostring(key) .. ": " .. tostring(value))
-                      end
-                    end
-                    
-                    -- Force override the neon-connection-string header for credential injection
-                    local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
-                    request_handle:headers():replace("neon-connection-string", real_conn_str)
-                    
-                    -- For WebSocket connections, also check for any connection string in query parameters
+                    -- WebSocket credential injection for Neon Local
                     if is_websocket then
+                      -- Extract X-Neon-* headers sent by @neondatabase/serverless driver
+                      local neon_user = request_handle:headers():get("x-neon-user")
+                      local neon_password = request_handle:headers():get("x-neon-password") 
+                      local neon_database = request_handle:headers():get("x-neon-database")
+                      
+                      if neon_user and neon_password and neon_database then
+                        request_handle:logInfo("Lua filter: Found WebSocket credential headers - user: " .. neon_user .. ", database: " .. neon_database)
+                        
+                        -- Build connection string with extracted credentials
+                        local injected_conn_str = "postgresql://" .. neon_user .. ":" .. neon_password .. "@" .. host .. "/" .. neon_database .. "?sslmode=require&application_name=neon-local-websocket"
+                        request_handle:headers():replace("neon-connection-string", injected_conn_str)
+                        
+                        -- Remove the X-Neon-* headers to prevent credential leakage to backend
+                        request_handle:headers():remove("x-neon-user")
+                        request_handle:headers():remove("x-neon-password")
+                        request_handle:headers():remove("x-neon-database")
+                        
+                        request_handle:logInfo("Lua filter: WebSocket credentials injected and X-Neon-* headers removed")
+                      else
+                        -- Fallback to default connection string if X-Neon-* headers are missing
+                        local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
+                        request_handle:headers():replace("neon-connection-string", real_conn_str)
+                        request_handle:logInfo("Lua filter: No X-Neon-* headers found, using default connection string")
+                      end
+                      
+                      -- Log query parameters for debugging
                       local query_string = request_handle:headers():get(":path")
                       if query_string and string.find(query_string, "?") then
-                        -- Extract and potentially modify query parameters if needed
                         request_handle:logInfo("Lua filter: WebSocket query string: " .. query_string)
                       end
+                    else
+                      -- For HTTP /sql requests, use default connection string
+                      local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
+                      request_handle:headers():replace("neon-connection-string", real_conn_str)
                     end
                     
-                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
+                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and configured neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
                   end
                 end
           - name: envoy.filters.http.router

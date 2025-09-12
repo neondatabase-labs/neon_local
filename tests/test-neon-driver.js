@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Test 2: Neon serverless driver with custom endpoint
+// Test 2: Neon serverless driver with isNeonLocal configuration
 import { neon, neonConfig } from '@neondatabase/serverless';
 
 async function testNeonServerlessDriver() {
@@ -18,16 +18,24 @@ async function testNeonServerlessDriver() {
         Object.keys(neonConfig.opts).forEach(key => delete neonConfig.opts[key]);
       }
       
-      // Configure Neon for local proxy - disable websockets completely
-      neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';
-      neonConfig.webSocketConstructor = undefined;
+      // Configure Neon for local proxy with isNeonLocal
+      neonConfig.isNeonLocal = true;
+      
+      // When isNeonLocal=true, the driver enables credential injection but still needs
+      // explicit configuration for the local HTTP endpoint
+      neonConfig.fetchEndpoint = 'http://localhost:5432/sql';
       neonConfig.poolQueryViaFetch = true;
+      
+      // Verify the driver has credential injection capability
+      console.log('neonLocalCredentials should be undefined:', neonConfig.neonLocalCredentials);
+      console.log('fetchEndpoint configured:', neonConfig.fetchEndpoint);
+      console.log('poolQueryViaFetch configured:', neonConfig.poolQueryViaFetch);
       
       // Add a small delay to ensure config is applied
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Use the standard localhost connection string - proxy should handle the rest
-      const sql = neon('postgresql://neon:npg@localhost/neondb');
+      const sql = neon('postgresql://neon:npg@localhost:5432/neondb');
       
       // Ensure the users table exists with test data
       await sql`

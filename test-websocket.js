@@ -12,6 +12,9 @@ async function testWebSocket() {
     const ws = new WebSocket('ws://localhost:5432/sql', {
       headers: {
         'neon-connection-string': 'postgresql://neon:npg@localhost/neondb', // This should be replaced by Lua filter
+        'X-Neon-User': 'neon',           // New credential injection headers
+        'X-Neon-Password': 'npg',        // These will be processed by Envoy Lua filter
+        'X-Neon-Database': 'neondb',     // And removed before forwarding to backend
         'User-Agent': 'WebSocket-Test-Client'
       }
     });

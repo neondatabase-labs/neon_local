@@ -15,21 +15,14 @@ async function testDrizzleNeonHttp() {
     try {
       console.log(`  📡 Attempt ${attempt}/${maxRetries}: Testing Drizzle + Neon serverless (HTTP)...`);
       
-      // Clear and reset configuration for clean state
-      if (neonConfig.opts) {
-        Object.keys(neonConfig.opts).forEach(key => delete neonConfig.opts[key]);
-      }
-      
-      // Configure Neon for local proxy - HTTP mode only (no websockets)
-      neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';
-      neonConfig.webSocketConstructor = undefined;
-      neonConfig.poolQueryViaFetch = true;
+      // Configure Neon for local proxy using isNeonLocal
+      neonConfig.isNeonLocal = true;
       
       // Add a small delay to ensure config is applied
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Create Neon connection - proxy should handle credential injection
-      const neonSql = neon('postgresql://neon:npg@localhost/neondb');
+      const neonSql = neon('postgresql://neon:npg@localhost:5432/neondb');
       
       // Initialize Drizzle with Neon HTTP driver
       const db = drizzle(neonSql);

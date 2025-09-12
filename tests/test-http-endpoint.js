@@ -42,7 +42,7 @@ function makeHttpRequest() {
     });
 
     const options = {
-      hostname: '127.0.0.1',
+      hostname: 'localhost',
       port: 5432,
       path: '/sql',
       method: 'POST',

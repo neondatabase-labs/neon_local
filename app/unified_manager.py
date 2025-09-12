@@ -190,19 +190,13 @@ class UnifiedManager(ProcessManager):
             # Keep hostname for SNI support
             host = db['host']
             
-            entry = f"{db['database']}=user={db['user']} password={db['password']} host={host} port=5432 dbname={db['database']} application_name={app_name}"
+            # Add entry for the specific database
+            entry = f"{db['database']}=host={host} port=5432 dbname={db['database']} application_name={app_name}"
             database_entries.append(entry)
         
-        # Add wildcard entry pointing to the first database
-        if databases:
-            first_db = databases[0]
-            endpoint_id = first_db['host'].split('.')[0]
-            
-            # Keep hostname for SNI support
-            host = first_db['host']
-            
-            wildcard_entry = f"*=user={first_db['user']} password={first_db['password']} host={host} port=5432 dbname={first_db['database']} application_name={app_name}"
-            database_entries.append(wildcard_entry)
+        # Add wildcard entry for dynamic credentials
+        wildcard_entry = "*=host=127.0.0.1 port=5432 dbname=neondb application_name=neon_local_websocket"
+        database_entries.append(wildcard_entry)
         
         # Modify pgbouncer section to listen on port 6432 (internal port)
         pgbouncer_section = pgbouncer_section.replace("listen_port = 5432", "listen_port = 6432")
