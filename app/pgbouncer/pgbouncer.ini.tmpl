@@ -1,5 +1,10 @@
 [databases]
-*=user={role} password={password} host={host} port=5432 dbname={database} 
+# Transaction mode (default) - good for most applications and ORMs
+*=user={role} password={password} host={host} port=5432 dbname={database} pool_mode=transaction
+
+# Session mode - for applications requiring session-specific features
+# Connect using database name with "_session" suffix (e.g., "neondb_session")
+*_session=user={role} password={password} host={host} port=5432 dbname={database} pool_mode=session 
 
 [pgbouncer]
 listen_addr = 0.0.0.0
@@ -9,26 +14,30 @@ auth_file = /etc/pgbouncer/userlist.txt
 
 # Performance optimized pooling mode - transaction mode for better ORM compatibility
 pool_mode = transaction
-max_client_conn = 200
-# Pool sizes optimized for Neon serverless - allow scaling to zero
-default_pool_size = 25
+# Significantly increased connection limits to handle high concurrent load without exhaustion
+max_client_conn = 2000
+# Pool sizes optimized for Neon serverless - dramatically increased for production load
+default_pool_size = 200
 # Allow all connections to close for Neon scale-to-zero
 min_pool_size = 0
-reserve_pool_size = 5
+reserve_pool_size = 50
+max_db_connections = 500
 
-# SSL configuration
-client_tls_sslmode = require
+# SSL configuration - allow non-SSL for WebSocket proxy from localhost
+client_tls_sslmode = allow
 client_tls_cert_file = /etc/pgbouncer/server.crt
 client_tls_key_file = /etc/pgbouncer/server.key
 server_tls_sslmode = verify-full
 
-# Performance tuning - using only supported parameters
-server_connect_timeout = 15
-query_timeout = 60
-query_wait_timeout = 120
+# Performance tuning - optimized for high load and graceful connection handling
+server_connect_timeout = 30
+query_timeout = 120
+query_wait_timeout = 300
 client_idle_timeout = 0
-# 5 minutes - close server connections before Neon scales down
-server_idle_timeout = 300
+# 10 minutes - close server connections before Neon scales down, increased for stability
+server_idle_timeout = 600
+# Additional connection management for graceful handling - 1 hour rotation
+server_lifetime = 3600
 
 # Moderate logging for Neon scale-to-zero monitoring
 # Log connections to monitor database wake-ups

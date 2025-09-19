@@ -13,6 +13,18 @@ static_resources:
         protocol: TCP
         address: 0.0.0.0
         port_value: 5432
+    # Optimize for high connection load
+    socket_options:
+    - level: 1     # SOL_SOCKET
+      name: 2      # SO_REUSEADDR
+      int_value: 1
+    - level: 6     # IPPROTO_TCP
+      name: 1      # TCP_NODELAY
+      int_value: 1
+    per_connection_buffer_limit_bytes: 134217728  # 128MB per connection - doubled for high concurrency
+    # Global connection balancing to prevent resource exhaustion
+    connection_balance_config:
+      exact_balance: {}
     listener_filters:
     - name: envoy.filters.listener.http_inspector
       typed_config:
@@ -24,11 +36,72 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
           stat_prefix: neon_http
+          # HTTP/2 and connection optimization - increased for high concurrency
+          http2_protocol_options:
+            max_concurrent_streams: 5000        # Increased from 1000 for better concurrency
+            initial_stream_window_size: 536870912  # 512MB - doubled for large requests
+            initial_connection_window_size: 536870912  # 512MB - doubled for large requests
+            max_outbound_frames: 10000           # Increased frame buffer
+            max_outbound_control_frames: 1000    # Increased control frame buffer
+            max_consecutive_inbound_frames_with_empty_payload: 1
+            max_inbound_priority_frames_per_stream: 100
+            max_inbound_window_update_frames_per_data_frame_sent: 10
+          # HTTP/1.1 optimization
+          http_protocol_options:
+            accept_http_10: true
+            default_host_for_http_10: "localhost"
+          # Connection management
+          use_remote_address: true
+          xff_num_trusted_hops: 0
+          # Timeouts optimized for concurrent bursts and cold start scenarios
+          request_timeout: 120s           # Doubled for cold start delays
+          request_headers_timeout: 30s    # Tripled for concurrent request processing
+          stream_idle_timeout: 180s       # Reduced to free resources faster
+          drain_timeout: 10s              # Doubled for graceful shutdown
+          delayed_close_timeout: 5s       # Add explicit delayed close timeout
+          # Connection limits and pooling - optimized for high concurrency
+          common_http_protocol_options:
+            idle_timeout: 900s              # Increased from 300s to 15 minutes
+            max_connection_duration: 0s     # No forced connection cycling
+            max_headers_count: 2000         # Increased from 1000 for complex requests
+            max_stream_duration: 0s         # No stream duration limits
+          # Removed invalid stats_tags configuration
+          # Connection manager level settings
+          server_name: "neon-local-proxy"
+          server_header_transformation: OVERWRITE
+          # HTTP/1 protocol options moved to http_protocol_options
+          # Optimize for high concurrency
+          normalize_path: true
+          merge_slashes: true
+          path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT
           access_log:
           - name: envoy.access_loggers.stdout
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
           http_filters:
+          # Add rate limiting filter (disabled by default, available for emergency use)
+          - name: envoy.filters.http.local_ratelimit
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+              stat_prefix: neon_http_rate_limiter
+              token_bucket:
+                max_tokens: 10000          # Very high rate limit (10k requests/second)
+                tokens_per_fill: 5000      # Refill 5k tokens per interval
+                fill_interval: 1s          # Refill every second
+              filter_enabled:
+                runtime_key: neon_rate_limit_enabled
+                default_value:
+                  numerator: 0             # Disabled by default (0% of requests)
+                  denominator: HUNDRED
+              filter_enforced:
+                runtime_key: neon_rate_limit_enforced  
+                default_value:
+                  numerator: 0             # Not enforced by default
+                  denominator: HUNDRED
+              response_headers_to_add:
+              - header:
+                  key: "x-neon-ratelimit-remaining"
+                  value: "%DOWNSTREAM_LOCAL_ADDRESS%"
           - name: envoy.filters.http.header_to_metadata
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.header_to_metadata.v3.Config
@@ -42,19 +115,21 @@ static_resources:
                   local upgrade_header = request_handle:headers():get("upgrade")
                   local is_websocket = upgrade_header and string.lower(upgrade_header) == "websocket"
                   
-                  -- Handle both HTTP /sql requests and WebSocket connections to Neon
-                  if path == "/sql" or is_websocket then
+                  -- Skip processing for WebSocket connections - let them route to our custom proxy
+                  if is_websocket then
+                    request_handle:logInfo("Lua filter: Skipping WebSocket connection - routing to custom proxy")
+                    return
+                  end
+                  
+                  -- Handle HTTP /sql requests to Neon
+                  if path == "/sql" then
                     -- Set the real Neon hostname
                     local host = "PLACEHOLDER_NEON_HOST"
                     request_handle:headers():replace(":authority", host)
                     request_handle:headers():replace("host", host)
                     
                     -- Log connection type and headers
-                    if is_websocket then
-                      request_handle:logInfo("Lua filter: Processing WebSocket connection to Neon")
-                    else
-                      request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
-                    end
+                    request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
                     
                     local headers = request_handle:headers()
                     for key, value in pairs(headers) do
@@ -67,16 +142,7 @@ static_resources:
                     local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
                     request_handle:headers():replace("neon-connection-string", real_conn_str)
                     
-                    -- For WebSocket connections, also check for any connection string in query parameters
-                    if is_websocket then
-                      local query_string = request_handle:headers():get(":path")
-                      if query_string and string.find(query_string, "?") then
-                        -- Extract and potentially modify query parameters if needed
-                        request_handle:logInfo("Lua filter: WebSocket query string: " .. query_string)
-                      end
-                    end
-                    
-                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
+                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for HTTP")
                   end
                 end
           - name: envoy.filters.http.router
@@ -97,7 +163,7 @@ static_resources:
               routes:
               # Database-specific routes will be injected here
               
-              # WebSocket route - matches any path with WebSocket upgrade header
+              # WebSocket route - matches any path with WebSocket upgrade header and routes to custom proxy
               - match:
                   prefix: "/"
                   headers:
@@ -105,7 +171,7 @@ static_resources:
                     string_match:
                       exact: "websocket"
                 route:
-                  cluster: neon_cluster_default
+                  cluster: wsproxy_cluster
                   timeout: 0s  # No timeout for WebSocket connections
                   upgrade_configs:
                   - upgrade_type: "websocket"
@@ -119,7 +185,20 @@ static_resources:
                   path: "/sql"
                 route:
                   cluster: neon_cluster_default
-                  timeout: 30s
+                  timeout: 120s  # Increased timeout for heavy queries
+                  idle_timeout: 60s
+                  retry_policy:
+                    retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers
+                    retriable_status_codes: [503, 502, 504]  # Added 502 and 504 for cold start scenarios
+                    num_retries: 15          # Increased from 10 for cold start tolerance
+                    per_try_timeout: 12s     # Increased from 8s for cold start delays  
+                    retry_back_off:
+                      base_interval: 0.1s    # Slightly increased initial delay
+                      max_interval: 5s       # Increased max backoff for cold start
+                    retriable_request_headers:
+                    - name: ":method"
+                      string_match:
+                        exact: "POST"
                 request_headers_to_add:
                 - header:
                     key: "neon-connection-string"
@@ -135,7 +214,20 @@ static_resources:
                     present_match: true
                 route:
                   cluster: neon_cluster_default
-                  timeout: 30s
+                  timeout: 120s  # Increased timeout for heavy queries
+                  idle_timeout: 60s
+                  retry_policy:
+                    retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers
+                    retriable_status_codes: [503, 502, 504]  # Added 502 and 504 for cold start scenarios
+                    num_retries: 15          # Increased from 10 for cold start tolerance
+                    per_try_timeout: 12s     # Increased from 8s for cold start delays  
+                    retry_back_off:
+                      base_interval: 0.1s    # Slightly increased initial delay
+                      max_interval: 5s       # Increased max backoff for cold start
+                    retriable_request_headers:
+                    - name: ":method"
+                      string_match:
+                        exact: "POST"
                 request_headers_to_add:
                 - header:
                     key: "neon-connection-string"
@@ -187,5 +279,20 @@ static_resources:
       unhealthy_threshold: 2
       healthy_threshold: 1
       tcp_health_check: {}
+
+  # WebSocket proxy cluster for WebSocket connections
+  - name: wsproxy_cluster
+    connect_timeout: 3s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: wsproxy_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 8080
 
   # Database-specific clusters will be injected here

@@ -10,6 +10,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime dependencies
     python3 \
+    python3-pip \
     python3-requests \
     python3-yaml \
     openssl \
@@ -31,6 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Envoy binary from official image (avoid downloading/extracting)
 COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
 COPY --from=envoy-source /usr/local/bin/su-exec /usr/local/bin/su-exec
+
+# Install Python dependencies for WebSocket proxy
+RUN pip3 install --no-cache-dir websockets psycopg2-binary
 
 # Build PgBouncer from source and aggressively clean up
 RUN wget https://pgbouncer.github.io/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -O /tmp/pgbouncer.tar.gz \
@@ -107,11 +111,11 @@ COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
 COPY unified_manager.py /scripts/app/unified_manager.py
-COPY /pgbouncer/pgbouncer_manager.py /scripts/app/pgbouncer_manager.py
-COPY /envoy/envoy_manager.py /scripts/app/envoy_manager.py
+COPY /wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
 COPY pgbouncer_wrapper.sh /usr/local/bin/pgbouncer_wrapper.sh
 RUN chmod +x /usr/local/bin/pgbouncer_wrapper.sh
 RUN touch /scripts/app/__init__.py
+RUN touch /scripts/app/wsproxy/__init__.py
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -127,8 +131,10 @@ RUN chmod +x /usr/local/bin/startup.sh
 # Create and set permissions for logs
 RUN touch /var/log/pgbouncer.log \
     && touch /var/log/envoy.log \
-    && chown postgres:postgres /var/log/pgbouncer.log /var/log/envoy.log \
-    && chmod 644 /var/log/pgbouncer.log /var/log/envoy.log
+    && touch /var/log/wsproxy.log \
+    && touch /var/log/custom_wsproxy.log \
+    && chown postgres:postgres /var/log/pgbouncer.log /var/log/envoy.log /var/log/wsproxy.log /var/log/custom_wsproxy.log \
+    && chmod 644 /var/log/pgbouncer.log /var/log/envoy.log /var/log/wsproxy.log /var/log/custom_wsproxy.log
 
 USER root
 WORKDIR /scripts
