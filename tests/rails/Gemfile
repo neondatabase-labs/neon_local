@@ -1,0 +1,25 @@
+source 'https://rubygems.org'
+
+ruby '>= 2.6.0'
+
+# Rails framework (compatible with Ruby 2.6)
+gem 'rails', '~> 6.1'
+
+# PostgreSQL adapter
+gem 'pg', '~> 1.2'
+
+# JSON handling
+gem 'json', '~> 2.3'
+
+# Database utilities
+gem 'activerecord', '~> 6.1'
+gem 'activemodel', '~> 6.1'
+
+# Testing utilities
+gem 'minitest', '~> 5.14'
+
+# Performance and monitoring
+gem 'benchmark-ips', '~> 2.8'
+
+# Utilities
+gem 'colorize', '~> 0.8'
