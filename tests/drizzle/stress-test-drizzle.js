@@ -8,14 +8,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 class DrizzleStressTest {
   constructor() {
-    this.totalRuns = 20;
+    this.totalRuns = 50;
     this.results = [];
     this.startTime = Date.now();
   }
 
   async runSingleTest(runNumber) {
     return new Promise((resolve) => {
-      console.log(`\n🔄 Run ${runNumber}/20 - ${new Date().toLocaleTimeString()}`);
+      console.log(`\n🔄 Run ${runNumber}/50 - ${new Date().toLocaleTimeString()}`);
       console.log('-------------------------------------------');
       
       const startTime = Date.now();
@@ -52,9 +52,9 @@ class DrizzleStressTest {
         this.results.push(result);
 
         if (success) {
-          console.log(`✅ Run ${runNumber}/20: SUCCESS (${duration}ms)`);
+          console.log(`✅ Run ${runNumber}/50: SUCCESS (${duration}ms)`);
         } else {
-          console.log(`❌ Run ${runNumber}/20: FAILED (${duration}ms) - Exit code: ${code}`);
+          console.log(`❌ Run ${runNumber}/50: FAILED (${duration}ms) - Exit code: ${code}`);
           if (result.has503Errors) {
             console.log(`   🚨 503 errors detected in run ${runNumber}`);
           }
@@ -67,7 +67,7 @@ class DrizzleStressTest {
       });
 
       testProcess.on('error', (error) => {
-        console.log(`💥 Run ${runNumber}/20: ERROR - ${error.message}`);
+        console.log(`💥 Run ${runNumber}/50: ERROR - ${error.message}`);
         const result = {
           run: runNumber,
           success: false,
@@ -85,10 +85,10 @@ class DrizzleStressTest {
   }
 
   async runStressTest() {
-    console.log('🚀 Starting 20x Drizzle Test Stress Test with Zero Retries');
+    console.log('🚀 Starting 50x Drizzle Test Stress Test with Zero Retries');
     console.log('=================================================================');
     console.log(`📅 Started at: ${new Date().toISOString()}`);
-    console.log(`🎯 Target: 20 consecutive test runs with 100% success rate`);
+    console.log(`🎯 Target: 50 consecutive test runs with 100% success rate`);
     console.log(`🚫 Retry Policy: DISABLED (maxRetries = 0)`);
     console.log('=================================================================');
 
@@ -114,7 +114,7 @@ class DrizzleStressTest {
     const successRate = (successfulRuns / this.totalRuns) * 100;
 
     console.log('\n');
-    console.log('🎯 20x DRIZZLE STRESS TEST RESULTS');
+    console.log('🎯 50x DRIZZLE STRESS TEST RESULTS');
     console.log('=================================================================');
     console.log(`📅 Completed at: ${new Date().toISOString()}`);
     console.log(`⏱️  Total Duration: ${(totalDuration / 1000).toFixed(1)}s`);
@@ -129,7 +129,7 @@ class DrizzleStressTest {
     console.log('');
 
     if (successRate === 100) {
-      console.log('🎉 PERFECT SCORE! All 20 runs passed with zero retries!');
+      console.log('🎉 PERFECT SCORE! All 50 runs passed with zero retries!');
       console.log('✨ Proxy optimizations have completely eliminated 503 errors.');
     } else if (successRate >= 95) {
       console.log('🌟 EXCELLENT! Near-perfect reliability achieved.');

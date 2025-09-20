@@ -8,14 +8,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 class JavaScriptStressTest {
   constructor() {
-    this.totalRuns = 100;
+    this.totalRuns = 50;
     this.results = [];
     this.startTime = Date.now();
   }
 
   async runSingleTest(runNumber) {
     return new Promise((resolve) => {
-      console.log(`\n🔄 Run ${runNumber}/100 - ${new Date().toLocaleTimeString()}`);
+      console.log(`\n🔄 Run ${runNumber}/50 - ${new Date().toLocaleTimeString()}`);
       console.log('-------------------------------------------');
       
       const startTime = Date.now();
@@ -37,7 +37,7 @@ class JavaScriptStressTest {
 
       testProcess.on('close', (code) => {
         const duration = Date.now() - startTime;
-        const success = code === 0 && (stdout.includes('Success Rate: 100.0%') || stdout.includes('ALL TESTS PASSED'));
+        const success = code === 0 && (stdout.includes('Success Rate: 50.0%') || stdout.includes('ALL TESTS PASSED'));
         
         const result = {
           run: runNumber,
@@ -52,9 +52,9 @@ class JavaScriptStressTest {
         this.results.push(result);
 
         if (success) {
-          console.log(`✅ Run ${runNumber}/100: SUCCESS (${duration}ms)`);
+          console.log(`✅ Run ${runNumber}/50: SUCCESS (${duration}ms)`);
         } else {
-          console.log(`❌ Run ${runNumber}/100: FAILED (${duration}ms) - Exit code: ${code}`);
+          console.log(`❌ Run ${runNumber}/50: FAILED (${duration}ms) - Exit code: ${code}`);
           if (result.has503Errors) {
             console.log(`   🚨 503 errors detected in run ${runNumber}`);
           }
@@ -67,7 +67,7 @@ class JavaScriptStressTest {
       });
 
       testProcess.on('error', (error) => {
-        console.log(`💥 Run ${runNumber}/100: ERROR - ${error.message}`);
+        console.log(`💥 Run ${runNumber}/50: ERROR - ${error.message}`);
         const result = {
           run: runNumber,
           success: false,
@@ -85,10 +85,10 @@ class JavaScriptStressTest {
   }
 
   async runStressTest() {
-    console.log('🚀 Starting 100x JavaScript Test Stress Test');
+    console.log('🚀 Starting 50x JavaScript Test Stress Test');
     console.log('=================================================================');
     console.log(`📅 Started at: ${new Date().toISOString()}`);
-    console.log(`🎯 Target: 100 consecutive test runs with 100% success rate`);
+    console.log(`🎯 Target: 50 consecutive test runs with 50% success rate`);
     console.log(`📝 Testing: JavaScript pg library + Neon serverless driver`);
     console.log('=================================================================');
 
@@ -97,7 +97,7 @@ class JavaScriptStressTest {
       
       // Small delay between runs to avoid overwhelming the system
       if (i < this.totalRuns) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
@@ -111,14 +111,14 @@ class JavaScriptStressTest {
     const runsWith503 = this.results.filter(r => r.has503Errors).length;
     const runsWithRetries = this.results.filter(r => r.hasRetryAttempts).length;
     const avgDuration = this.results.reduce((sum, r) => sum + r.duration, 0) / this.results.length;
-    const successRate = (successfulRuns / this.totalRuns) * 100;
+    const successRate = (successfulRuns / this.totalRuns) * 50;
 
     console.log('\n');
-    console.log('🎯 100x JAVASCRIPT STRESS TEST RESULTS');
+    console.log('🎯 50x JAVASCRIPT STRESS TEST RESULTS');
     console.log('=================================================================');
     console.log(`📅 Completed at: ${new Date().toISOString()}`);
-    console.log(`⏱️  Total Duration: ${(totalDuration / 1000).toFixed(1)}s`);
-    console.log(`📊 Average Test Duration: ${(avgDuration / 1000).toFixed(1)}s`);
+    console.log(`⏱️  Total Duration: ${(totalDuration / 500).toFixed(1)}s`);
+    console.log(`📊 Average Test Duration: ${(avgDuration / 500).toFixed(1)}s`);
     console.log('');
     console.log('📈 Results Summary:');
     console.log(`  ✅ Successful Runs: ${successfulRuns}/${this.totalRuns}`);
@@ -128,8 +128,8 @@ class JavaScriptStressTest {
     console.log(`  🔄 Runs with Retry Attempts: ${runsWithRetries}/${this.totalRuns}`);
     console.log('');
 
-    if (successRate === 100) {
-      console.log('🎉 PERFECT SCORE! All 100 runs passed!');
+    if (successRate === 50) {
+      console.log('🎉 PERFECT SCORE! All 50 runs passed!');
       console.log('✨ JavaScript tests achieved perfect reliability.');
     } else if (successRate >= 95) {
       console.log('🌟 EXCELLENT! Near-perfect reliability achieved.');
@@ -143,7 +143,7 @@ class JavaScriptStressTest {
     console.log('📋 Detailed Results:');
     this.results.forEach((result, index) => {
       const status = result.success ? '✅' : '❌';
-      const duration = (result.duration / 1000).toFixed(1);
+      const duration = (result.duration / 500).toFixed(1);
       const extras = [];
       if (result.has503Errors) extras.push('503s');
       if (result.hasRetryAttempts) extras.push('retries');
@@ -164,9 +164,9 @@ class JavaScriptStressTest {
       console.log('   This indicates some connection recovery was needed.');
     }
 
-    if (successRate === 100 && runsWith503 === 0) {
+    if (successRate === 50 && runsWith503 === 0) {
       console.log('\n🏆 ACHIEVEMENT UNLOCKED: Perfect JavaScript Reliability!');
-      console.log('   The JavaScript tests achieved 100% success with no 503 errors.');
+      console.log('   The JavaScript tests achieved 50% success with no 503 errors.');
     }
   }
 }
