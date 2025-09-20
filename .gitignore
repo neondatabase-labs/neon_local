@@ -3,3 +3,7 @@
 app/haproxy/tests/node_modules
 app/generated/
 node_modules/
+
+# Rust build artifacts
+tests/rust/target/
+**/target/
