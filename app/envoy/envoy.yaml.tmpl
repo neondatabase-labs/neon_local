@@ -5,6 +5,49 @@ admin:
       address: 127.0.0.1
       port_value: 9901
 
+# Enhanced stats and monitoring configuration for debugging 503 errors
+stats_config:
+  stats_tags:
+  - tag_name: "cluster_name"
+    regex: "^cluster\\.((.+?)\\.).*"
+  - tag_name: "response_code"
+    regex: "^([0-9]+)$"
+  - tag_name: "response_code_class"
+    regex: "^([0-9])\\d\\d$"
+  - tag_name: "method"
+    regex: "^http\\.([A-Z]+)\\."
+  - tag_name: "route_name"
+    regex: "^http\\..*\\.route\\.(.+?)\\."
+  histogram_bucket_settings:
+  - match: { prefix: "http" }
+    buckets: [0.5, 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000]
+  - match: { prefix: "cluster.upstream_rq_time" }
+    buckets: [0.5, 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000]
+
+# Enable detailed logging for debugging
+layered_runtime:
+  layers:
+  - name: static_layer_0
+    static_layer:
+      # Enable detailed circuit breaker logging
+      envoy:
+        resource_monitors:
+          injected_resource:
+            max_heap_size_bytes: 2147483648  # 2GB
+      # Enable retry and circuit breaker debug logging
+      upstream:
+        healthy_panic_threshold: 0.0  # Disable panic threshold for debugging
+      http:
+        # Enable detailed HTTP debugging
+        connection_manager:
+          route_config:
+            validate_clusters: true
+        # Enable retry debugging
+        retry_policy:
+          retry_back_off:
+            base_interval: 0.1s
+            max_interval: 15s
+
 static_resources:
   listeners:
   - name: unified_listener
@@ -78,6 +121,17 @@ static_resources:
           - name: envoy.access_loggers.stdout
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+              log_format:
+                text_format_source:
+                  inline_string: |
+                    [%START_TIME%] HTTP_ACCESS: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+                    status=%RESPONSE_CODE% flags=%RESPONSE_FLAGS% rx_bytes=%BYTES_RECEIVED% tx_bytes=%BYTES_SENT%
+                    duration=%DURATION%ms upstream_time=%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%ms
+                    client="%REQ(X-FORWARDED-FOR)%" user_agent="%REQ(USER-AGENT)%" request_id="%REQ(X-REQUEST-ID)%"
+                    authority="%REQ(:AUTHORITY)%" upstream="%UPSTREAM_HOST%" cluster="%UPSTREAM_CLUSTER%"
+                    local="%DOWNSTREAM_LOCAL_ADDRESS%" remote="%DOWNSTREAM_REMOTE_ADDRESS%"
+                    retry_count=%REQ(X-ENVOY-RETRY-COUNT)% circuit_breaker="%RESPONSE_CODE_DETAILS%"
+                    transport_failure="%UPSTREAM_TRANSPORT_FAILURE_REASON%" route_name="%ROUTE_NAME%"
           http_filters:
           # Add rate limiting filter (disabled by default, available for emergency use)
           - name: envoy.filters.http.local_ratelimit
@@ -111,13 +165,22 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
               inline_code: |
                 function envoy_on_request(request_handle)
-                  local path = request_handle:headers():get(":path")
+                  -- Enhanced debug logging for 503 error investigation
+                  local request_id = request_handle:headers():get("x-request-id") or "unknown"
+                  local method = request_handle:headers():get(":method") or "unknown"
+                  local path = request_handle:headers():get(":path") or "unknown"
+                  local authority = request_handle:headers():get(":authority") or "unknown"
+                  local user_agent = request_handle:headers():get("user-agent") or "unknown"
                   local upgrade_header = request_handle:headers():get("upgrade")
                   local is_websocket = upgrade_header and string.lower(upgrade_header) == "websocket"
                   
+                  -- Log every request for debugging
+                  request_handle:logInfo(string.format("[DEBUG_LUA] REQUEST_START: id=%s method=%s path=%s authority=%s user_agent=%s websocket=%s", 
+                    request_id, method, path, authority, user_agent, tostring(is_websocket)))
+                  
                   -- Skip processing for WebSocket connections - let them route to our custom proxy
                   if is_websocket then
-                    request_handle:logInfo("Lua filter: Skipping WebSocket connection - routing to custom proxy")
+                    request_handle:logInfo(string.format("[DEBUG_LUA] WEBSOCKET_ROUTE: id=%s routing to custom proxy", request_id))
                     return
                   end
                   
@@ -128,21 +191,30 @@ static_resources:
                     request_handle:headers():replace(":authority", host)
                     request_handle:headers():replace("host", host)
                     
-                    -- Log connection type and headers
-                    request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
-                    
-                    local headers = request_handle:headers()
-                    for key, value in pairs(headers) do
-                      if key and value then
-                        request_handle:logInfo("Lua filter: Header " .. tostring(key) .. ": " .. tostring(value))
-                      end
-                    end
-                    
                     -- Force override the neon-connection-string header for credential injection
                     local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
                     request_handle:headers():replace("neon-connection-string", real_conn_str)
                     
-                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for HTTP")
+                    request_handle:logInfo(string.format("[DEBUG_LUA] NEON_ROUTE: id=%s host=%s path=%s", request_id, host, path))
+                  else
+                    request_handle:logInfo(string.format("[DEBUG_LUA] OTHER_ROUTE: id=%s path=%s", request_id, path))
+                  end
+                end
+                
+                function envoy_on_response(response_handle)
+                  -- Log response details for debugging 503 errors
+                  local request_id = response_handle:headers():get("x-request-id") or "unknown"
+                  local status = response_handle:headers():get(":status") or "unknown"
+                  local upstream_time = response_handle:headers():get("x-envoy-upstream-service-time") or "unknown"
+                  local response_flags = response_handle:headers():get("x-envoy-response-flags") or "none"
+                  
+                  response_handle:logInfo(string.format("[DEBUG_LUA] RESPONSE: id=%s status=%s upstream_time=%sms flags=%s", 
+                    request_id, status, upstream_time, response_flags))
+                  
+                  -- Special logging for 503 errors
+                  if status == "503" then
+                    response_handle:logErr(string.format("[DEBUG_LUA] 503_ERROR: id=%s upstream_time=%sms flags=%s", 
+                      request_id, upstream_time, response_flags))
                   end
                 end
           - name: envoy.filters.http.router
@@ -185,16 +257,16 @@ static_resources:
                   path: "/sql"
                 route:
                   cluster: neon_cluster_default
-                  timeout: 120s  # Increased timeout for heavy queries
+                  timeout: 180s  # Increased timeout for heavy queries with retries
                   idle_timeout: 60s
                   retry_policy:
                     retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers
                     retriable_status_codes: [503, 502, 504]  # Added 502 and 504 for cold start scenarios
-                    num_retries: 15          # Increased from 10 for cold start tolerance
-                    per_try_timeout: 12s     # Increased from 8s for cold start delays  
+                    num_retries: 20          # Increased from 15 for better reliability
+                    per_try_timeout: 20s     # Increased from 15s for better cold start tolerance  
                     retry_back_off:
-                      base_interval: 0.1s    # Slightly increased initial delay
-                      max_interval: 5s       # Increased max backoff for cold start
+                      base_interval: 0.1s    # Keep initial delay low for fast retries
+                      max_interval: 15s      # Further increased max backoff for later retries
                     retriable_request_headers:
                     - name: ":method"
                       string_match:
@@ -214,16 +286,16 @@ static_resources:
                     present_match: true
                 route:
                   cluster: neon_cluster_default
-                  timeout: 120s  # Increased timeout for heavy queries
+                  timeout: 180s  # Increased timeout for heavy queries with retries
                   idle_timeout: 60s
                   retry_policy:
                     retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers
                     retriable_status_codes: [503, 502, 504]  # Added 502 and 504 for cold start scenarios
-                    num_retries: 15          # Increased from 10 for cold start tolerance
-                    per_try_timeout: 12s     # Increased from 8s for cold start delays  
+                    num_retries: 20          # Increased from 15 for better reliability
+                    per_try_timeout: 20s     # Increased from 15s for better cold start tolerance  
                     retry_back_off:
-                      base_interval: 0.1s    # Slightly increased initial delay
-                      max_interval: 5s       # Increased max backoff for cold start
+                      base_interval: 0.1s    # Keep initial delay low for fast retries
+                      max_interval: 15s      # Further increased max backoff for later retries
                     retriable_request_headers:
                     - name: ":method"
                       string_match:

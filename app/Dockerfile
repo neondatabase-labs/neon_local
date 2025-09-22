@@ -100,18 +100,18 @@ RUN groupadd -f postgres || true \
     && echo "postgres ALL=(root) NOPASSWD: /bin/sed, /bin/sh" >> /etc/sudoers
 
 # PgBouncer config
-COPY /pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
-COPY /pgbouncer/pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
+COPY pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
+COPY pgbouncer/pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
 
 # Envoy config template
-COPY /envoy/envoy.yaml.tmpl /scripts/app/envoy/envoy.yaml.tmpl
+COPY envoy/envoy.yaml.tmpl /scripts/app/envoy/envoy.yaml.tmpl
 
 # Application code
 COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
 COPY unified_manager.py /scripts/app/unified_manager.py
-COPY /wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
+COPY wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
 COPY pgbouncer_wrapper.sh /usr/local/bin/pgbouncer_wrapper.sh
 RUN chmod +x /usr/local/bin/pgbouncer_wrapper.sh
 RUN touch /scripts/app/__init__.py
