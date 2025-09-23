@@ -126,17 +126,43 @@ postgres://neon:npg@db:5432/<database_name>?sslmode=no-verify
 
 ## Connecting your app (Neon serverless driver)
 
-Connect using the Neon [serverless driver](https://neon.tech/docs/serverless/serverless-driver).
+Connect using the Neon [serverless driver](https://neon.tech/docs/serverless/serverless-driver). The Neon serverless driver requires specific configuration to work with the local proxy.
 
+### Required Configuration
+
+The following `neonConfig` settings are **required** for the serverless driver to work with Neon Local:
+
+```javascript
+import { neon, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws'; // Only needed for WebSocket mode
+
+// HTTP Mode (recommended for most applications)
+neonConfig.fetchEndpoint = 'http://localhost:5432/sql';  // Routes HTTP requests to local proxy
+neonConfig.poolQueryViaFetch = true;                     // Enables HTTP connection pooling
+
+// WebSocket Mode (for real-time applications)
+neonConfig.webSocketConstructor = ws;                    // Enables WebSocket support
+neonConfig.useSecureWebSocket = false;                   // Local proxy doesn't use SSL
+neonConfig.wsProxy = (host, port) => 'localhost:5432';  // Routes WebSocket connections to local proxy
+neonConfig.pipelineConnect = false;                      // Required for authentication to work
+
+const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
+```
+
+### Why This Configuration Is Necessary
+
+- **`fetchEndpoint`**: Redirects HTTP requests from Neon's cloud endpoint to your local proxy
+- **`useSecureWebSocket: false`**: The local proxy runs without SSL encryption for simplicity
+- **`wsProxy`**: Intercepts WebSocket connections and routes them to the local proxy instead of Neon's cloud
+- **`pipelineConnect: false`**: Disables connection pipelining which can interfere with proxy authentication
 
 ### Docker run
 
 ```javascript
 import { neon, neonConfig } from '@neondatabase/serverless';
 
+// HTTP Mode (simple setup)
 neonConfig.fetchEndpoint = 'http://localhost:5432/sql';
-
-
 const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 ```
 
@@ -145,9 +171,30 @@ const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 ```javascript
 import { neon, neonConfig } from '@neondatabase/serverless';
 
+// Use service name instead of localhost
 neonConfig.fetchEndpoint = 'http://db:5432/sql';
-
 const sql = neon('postgres://neon:npg@db:5432/<database_name>');
+```
+
+### WebSocket Mode Example
+
+For applications requiring real-time features or persistent connections:
+
+```javascript
+import { neon, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
+
+// Configure for WebSocket mode
+neonConfig.webSocketConstructor = ws;
+neonConfig.useSecureWebSocket = false;
+neonConfig.wsProxy = (host, port) => 'localhost:5432';
+neonConfig.pipelineConnect = false;
+
+// Remove HTTP configuration
+delete neonConfig.fetchEndpoint;
+neonConfig.poolQueryViaFetch = false;
+
+const sql = neon('postgres://neon:npg@localhost:5432/<database_name>');
 ```
 
 No additional environment variables are needed - the same Docker configuration works for both drivers:
