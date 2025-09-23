@@ -90,7 +90,7 @@ class PrismaNeonAdapterTester {
     console.log('🔧 Setting up Prisma for Neon...');
     
     await this.runTest('Generate Prisma Client', async () => {
-      const { stdout, stderr } = await execAsync('npx prisma generate', {
+      const { stdout, stderr } = await execAsync('npx prisma generate --schema=./tests/prisma/schema.prisma', {
         cwd: projectRoot,
         env: { ...process.env, DATABASE_URL: 'postgresql://neon:npg@localhost:5432/neondb' }
       });
@@ -106,7 +106,7 @@ class PrismaNeonAdapterTester {
     });
 
     await this.runTest('Sync Database Schema', async () => {
-      const { stdout, stderr } = await execAsync('npx prisma db push --force-reset', {
+      const { stdout, stderr } = await execAsync('npx prisma db push --force-reset --schema=./tests/prisma/schema.prisma', {
         cwd: projectRoot,
         env: { 
           ...process.env, 
@@ -135,7 +135,7 @@ class PrismaNeonAdapterTester {
         // Import Neon modules
         const { neon, neonConfig } = await import('@neondatabase/serverless');
         const { PrismaNeon } = await import('@prisma/adapter-neon');
-        const { PrismaClient } = await import('../../app/generated/prisma/index.js');
+        const { PrismaClient } = await import('@prisma/client');
         
         // Ensure Neon configuration is set for HTTP mode
         neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';

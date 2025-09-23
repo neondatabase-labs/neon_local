@@ -191,7 +191,7 @@ class PrismaSessionModeTester {
       const operations = Array.from({ length: 5 }, (_, i) => 
         this.sessionPrisma.$queryRaw`
           INSERT INTO prisma_session_users (name, email, metadata) 
-          VALUES (${`Concurrent User ${i}`}, ${`concurrent${i}@prisma.com`}, ${JSON.stringify({ concurrent: i })})
+          VALUES (${`Concurrent User ${i}`}, ${`concurrent${i}@prisma.com`}, ${JSON.stringify({ concurrent: i })}::jsonb)
           RETURNING id, name
         `
       );
@@ -223,7 +223,7 @@ class PrismaSessionModeTester {
       
       const jsonResult = await this.sessionPrisma.$queryRaw`
         SELECT name, 
-               metadata->>'preferences'->>'theme' as theme,
+               metadata->'preferences'->>'theme' as theme,
                jsonb_array_length(metadata->'roles') as role_count
         FROM prisma_session_users 
         WHERE email = 'json@prisma.com'
@@ -252,7 +252,7 @@ class PrismaSessionModeTester {
         for (let i = 1; i <= 3; i++) {
           const postResult = await prisma.$queryRaw`
             INSERT INTO prisma_session_posts (title, content, author_id, metadata)
-            VALUES (${`Interactive Post ${i}`}, ${`Content for post ${i}`}, ${user.id}, ${JSON.stringify({ order: i })})
+            VALUES (${`Interactive Post ${i}`}, ${`Content for post ${i}`}, ${user.id}, ${JSON.stringify({ order: i })}::jsonb)
             RETURNING id, title
           `;
           posts.push(postResult[0]);
@@ -397,10 +397,9 @@ class PrismaSessionModeTester {
         INSERT INTO prisma_session_users (name, email, metadata) VALUES ($1, $2, $3)
       `);
       
-      // Execute prepared statement
+      // Execute prepared statement with direct values
       await this.sessionClient.query(
-        "EXECUTE prisma_session_insert_stmt ($1, $2, $3)",
-        ['Prepared User', 'prepared@prisma.com', JSON.stringify({ method: 'prepared_statement' })]
+        `EXECUTE prisma_session_insert_stmt ('Prepared User', 'prepared@prisma.com', '${JSON.stringify({ method: 'prepared_statement' })}')`
       );
       
       // Verify data was inserted

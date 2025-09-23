@@ -230,7 +230,11 @@ defmodule ElixirTestRunner do
 
     rescue
       error ->
-        IO.puts("❌ Test runner failed: #{Exception.message(error)}")
+        error_message = case error do
+          %{message: msg} -> msg
+          _ -> inspect(error)
+        end
+        IO.puts("❌ Test runner failed: #{error_message}")
         %{
           success: false,
           total: 0,

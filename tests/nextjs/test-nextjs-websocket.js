@@ -5,23 +5,26 @@
  * Tests Next.js applications using Neon serverless driver via WebSocket connections
  */
 
-import { neon, neonConfig, Pool } from '@neondatabase/serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
 import { performance } from 'perf_hooks';
 import WebSocket from 'ws';
 
 class NextJSWebSocketTest {
   constructor() {
     this.testResults = [];
-    this.sql = null;
     this.pool = null;
     this.startTime = performance.now();
     
     // Configure Neon for WebSocket connections
-    neonConfig.fetchConnectionCache = true;
+    neonConfig.webSocketConstructor = WebSocket;
     neonConfig.useSecureWebSocket = false;
-    neonConfig.wsProxy = (host, port) => `${host}:${port}/v1`;
-    neonConfig.pipelineConnect = true;
-    neonConfig.pipelineTLS = false;
+    neonConfig.poolQueryViaFetch = false;
+    neonConfig.wsProxy = (host, port) => {
+      console.log(`🔍 WebSocket proxy called with host: ${host}, port: ${port}`);
+      return 'localhost:5432';
+    };
+    neonConfig.pipelineConnect = false; // Critical for authentication
+    delete neonConfig.fetchEndpoint;
     
     // Connection string for Neon serverless
     this.connectionString = 'postgresql://neon:npg@localhost:5432/neondb';
@@ -45,12 +48,15 @@ class NextJSWebSocketTest {
   }
 
   async setupDatabase() {
-    // Initialize Neon serverless SQL with WebSocket
-    this.sql = neon(this.connectionString);
+    // Initialize Neon serverless Pool with WebSocket
     this.pool = new Pool({ connectionString: this.connectionString });
+    
+    // Test the connection
+    const testResult = await this.pool.query('SELECT NOW() as current_time');
+    console.log(`✅ WebSocket connection established: ${testResult.rows[0].current_time}`);
 
     // Create test tables for Next.js WebSocket scenarios
-    await this.sql`
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS nextjs_ws_users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -60,9 +66,9 @@ class NextJSWebSocketTest {
         profile JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await this.sql`
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS nextjs_ws_messages (
         id SERIAL PRIMARY KEY,
         room_id VARCHAR(100) NOT NULL,
@@ -72,9 +78,9 @@ class NextJSWebSocketTest {
         metadata JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await this.sql`
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS nextjs_ws_rooms (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) UNIQUE NOT NULL,
@@ -83,9 +89,9 @@ class NextJSWebSocketTest {
         settings JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await this.sql`
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS nextjs_ws_connections (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES nextjs_ws_users(id),
@@ -95,26 +101,26 @@ class NextJSWebSocketTest {
         last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         metadata JSONB DEFAULT '{}'
       )
-    `;
+    `);
 
     // Create indexes for real-time queries
-    await this.sql`
+    await this.pool.query(`
       CREATE INDEX IF NOT EXISTS idx_nextjs_ws_messages_room ON nextjs_ws_messages(room_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_nextjs_ws_connections_user ON nextjs_ws_connections(user_id);
       CREATE INDEX IF NOT EXISTS idx_nextjs_ws_connections_room ON nextjs_ws_connections(room_id);
-    `;
+    `);
   }
 
   async testBasicWebSocketConnection() {
-    const result = await this.sql`
+    const result = await this.pool.query(`
       SELECT 
         'Next.js WebSocket Connection' as message,
         current_database() as database,
         pg_backend_pid() as pid,
         NOW() as timestamp
-    `;
+    `);
     
-    return `WebSocket connection established: ${result[0].message} to ${result[0].database} (PID: ${result[0].pid})`;
+    return `WebSocket connection established: ${result.rows[0].message} to ${result.rows[0].database} (PID: ${result.rows[0].pid})`;
   }
 
   async testRealTimeChatSimulation() {
@@ -130,15 +136,15 @@ class NextJSWebSocketTest {
     let createdUsers = 0;
     for (const user of users) {
       try {
-        await this.sql`
+        await this.pool.query(`
           INSERT INTO nextjs_ws_users (username, email, status, profile)
           VALUES (
-            ${user.username}, 
-            ${user.email}, 
-            ${user.status},
-            ${JSON.stringify({ avatar: `avatar-${user.username}.jpg`, theme: 'dark' })}
+            '${user.username}', 
+            '${user.email}', 
+            '${user.status}',
+            '${JSON.stringify({ avatar: 'avatar-' + user.username + '.jpg', theme: 'dark' })}'
           )
-        `;
+        `);
         createdUsers++;
       } catch (error) {
         if (!error.message.includes('duplicate key')) {
@@ -148,32 +154,32 @@ class NextJSWebSocketTest {
     }
 
     // Create chat room
-    await this.sql`
+    await this.pool.query(`
       INSERT INTO nextjs_ws_rooms (name, description, room_type, settings)
       VALUES (
         'general',
         'General discussion room',
         'public',
-        ${JSON.stringify({ maxUsers: 100, allowFiles: true, moderated: false })}
+        '${JSON.stringify({ maxUsers: 100, allowFiles: true, moderated: false })}'
       )
       ON CONFLICT (name) DO NOTHING
-    `;
+    `);
 
     // Simulate WebSocket connections
-    const users_data = await this.sql`SELECT id, username FROM nextjs_ws_users LIMIT 3`;
+    const users_data = await this.pool.query(`SELECT id, username FROM nextjs_ws_users LIMIT 3`);
     let activeConnections = 0;
     
-    for (const user of users_data) {
+    for (const user of users_data.rows) {
       const connectionId = `ws_${user.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await this.sql`
+      await this.pool.query(`
         INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id, metadata)
         VALUES (
           ${user.id},
-          ${connectionId},
+          '${connectionId}',
           'general',
-          ${JSON.stringify({ userAgent: 'Next.js WebSocket Test', ip: '127.0.0.1' })}
+          '${JSON.stringify({ userAgent: 'Next.js WebSocket Test', ip: '127.0.0.1' })}'
         )
-      `;
+      `);
       activeConnections++;
     }
 
@@ -182,36 +188,36 @@ class NextJSWebSocketTest {
 
   async testRealTimeMessaging() {
     // Simulate real-time messaging with WebSocket
-    const users = await this.sql`SELECT id, username FROM nextjs_ws_users LIMIT 2`;
-    if (users.length < 2) {
+    const users = await this.pool.query(`SELECT id, username FROM nextjs_ws_users LIMIT 2`);
+    if (users.rows.length < 2) {
       return 'Real-time messaging: Skipped (need at least 2 users)';
     }
 
     // Simulate chat messages
     const messages = [
-      { user_id: users[0].id, content: 'Hello everyone! 👋', type: 'text' },
-      { user_id: users[1].id, content: 'Hey there! How are you doing?', type: 'text' },
-      { user_id: users[0].id, content: 'Great! Working on some Next.js features', type: 'text' },
-      { user_id: users[1].id, content: '🚀', type: 'emoji' }
+      { user_id: users.rows[0].id, content: 'Hello everyone! 👋', type: 'text' },
+      { user_id: users.rows[1].id, content: 'Hey there! How are you doing?', type: 'text' },
+      { user_id: users.rows[0].id, content: 'Great! Working on some Next.js features', type: 'text' },
+      { user_id: users.rows[1].id, content: '🚀', type: 'emoji' }
     ];
 
     let sentMessages = 0;
     for (const message of messages) {
-      await this.sql`
+      await this.pool.query(`
         INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
         VALUES (
           'general',
           ${message.user_id},
-          ${message.type},
-          ${message.content},
-          ${JSON.stringify({ timestamp: Date.now(), edited: false })}
+          '${message.type}',
+          '${message.content}',
+          '${JSON.stringify({ timestamp: Date.now(), edited: false })}'
         )
-      `;
+      `);
       sentMessages++;
     }
 
     // Simulate real-time message retrieval (what WebSocket would send)
-    const recentMessages = await this.sql`
+    const recentMessages = await this.pool.query(`
       SELECT 
         m.id,
         m.content,
@@ -224,16 +230,16 @@ class NextJSWebSocketTest {
       WHERE m.room_id = 'general'
       ORDER BY m.created_at DESC
       LIMIT 10
-    `;
+    `);
 
     // Update last activity for connections
-    await this.sql`
+    await this.pool.query(`
       UPDATE nextjs_ws_connections
       SET last_activity = NOW()
       WHERE room_id = 'general'
-    `;
+    `);
 
-    return `Real-time messaging: ${sentMessages} messages sent, ${recentMessages.length} messages retrieved`;
+    return `Real-time messaging: ${sentMessages} messages sent, ${recentMessages.rows.length} messages retrieved`;
   }
 
   async testWebSocketPooling() {
@@ -286,16 +292,16 @@ class NextJSWebSocketTest {
 
     let updatedStatuses = 0;
     for (const update of statusUpdates) {
-      const result = await this.sql`
+      const result = await this.pool.query(`
         UPDATE nextjs_ws_users
-        SET status = ${update.status}, last_seen = NOW()
-        WHERE username = ${update.username}
-      `;
+        SET status = '${update.status}', last_seen = NOW()
+        WHERE username = '${update.username}'
+      `);
       if (result.count > 0) updatedStatuses++;
     }
 
     // Get online users (what would be broadcast via WebSocket)
-    const onlineUsers = await this.sql`
+    const onlineUsers = await this.pool.query(`
       SELECT 
         u.id,
         u.username,
@@ -307,17 +313,17 @@ class NextJSWebSocketTest {
       LEFT JOIN nextjs_ws_connections c ON u.id = c.user_id
       WHERE u.status IN ('online', 'typing')
       ORDER BY u.last_seen DESC
-    `;
+    `);
 
     // Simulate typing indicators
-    const typingUsers = await this.sql`
+    const typingUsers = await this.pool.query(`
       SELECT username, room_id
       FROM nextjs_ws_users u
       JOIN nextjs_ws_connections c ON u.id = c.user_id
       WHERE u.status = 'typing'
-    `;
+    `);
 
-    return `Real-time presence: ${updatedStatuses} status updates, ${onlineUsers.length} online users, ${typingUsers.length} typing indicators`;
+    return `Real-time presence: ${updatedStatuses} status updates, ${onlineUsers.rows.length} online users, ${typingUsers.rows.length} typing indicators`;
   }
 
   async testWebSocketNotifications() {
@@ -346,29 +352,29 @@ class NextJSWebSocketTest {
     for (const notification of notifications) {
       // Simulate broadcasting to WebSocket connections
       for (const recipient of notification.recipients) {
-        const user = await this.sql`
-          SELECT id FROM nextjs_ws_users WHERE username = ${recipient}
-        `;
+        const user = await this.pool.query(`
+          SELECT id FROM nextjs_ws_users WHERE username = '${recipient}'
+        `);
         
-        if (user.length > 0) {
+        if (user.rows.length > 0) {
           // Log notification (in real app, this would be sent via WebSocket)
-          await this.sql`
+          await this.pool.query(`
             INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
             VALUES (
               'system',
-              ${user[0].id},
+              ${user.rows[0].id},
               'notification',
-              ${notification.type},
-              ${JSON.stringify(notification.data)}
+              '${notification.type}',
+              '${JSON.stringify(notification.data)}'
             )
-          `;
+          `);
           sentNotifications++;
         }
       }
     }
 
     // Get recent notifications
-    const recentNotifications = await this.sql`
+    const recentNotifications = await this.pool.query(`
       SELECT 
         m.message_type,
         m.content,
@@ -379,9 +385,9 @@ class NextJSWebSocketTest {
       WHERE m.message_type = 'notification'
       ORDER BY m.created_at DESC
       LIMIT 10
-    `;
+    `);
 
-    return `WebSocket notifications: ${sentNotifications} notifications sent, ${recentNotifications.length} recent notifications`;
+    return `WebSocket notifications: ${sentNotifications} notifications sent, ${recentNotifications.rows.length} recent notifications`;
   }
 
   async testRealTimeDataSync() {
@@ -411,95 +417,103 @@ class NextJSWebSocketTest {
     for (const update of dataUpdates) {
       // Simulate the actual data change
       if (update.action === 'update' && update.table === 'nextjs_ws_users') {
-        await this.sql`
+        await this.pool.query(`
           UPDATE nextjs_ws_users
-          SET status = ${update.data.value}
+          SET status = '${update.data.value}'
           WHERE id = ${update.data.id}
-        `;
+        `);
       } else if (update.action === 'insert' && update.table === 'nextjs_ws_messages') {
-        const users = await this.sql`SELECT id FROM nextjs_ws_users LIMIT 1`;
-        if (users.length > 0) {
-          await this.sql`
+        const users = await this.pool.query(`SELECT id FROM nextjs_ws_users LIMIT 1`);
+        if (users.rows.length > 0) {
+          await this.pool.query(`
             INSERT INTO nextjs_ws_messages (room_id, user_id, content, message_type)
-            VALUES (${update.data.room_id}, ${users[0].id}, ${update.data.content}, 'sync_test')
-          `;
+            VALUES ('${update.data.room_id}', ${users.rows[0].id}, '${update.data.content}', 'sync_test')
+          `);
         }
       }
       
       // Log the sync event (in real app, this would trigger WebSocket broadcast)
-      await this.sql`
-        INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
-        VALUES (
-          'system',
-          1,
-          'data_sync',
-          ${update.action},
-          ${JSON.stringify(update)}
-        )
-      `;
+      const systemUser = await this.pool.query(`SELECT id FROM nextjs_ws_users LIMIT 1`);
+      if (systemUser.rows.length > 0) {
+        await this.pool.query(`
+          INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
+          VALUES (
+            'system',
+            ${systemUser.rows[0].id},
+            'data_sync',
+            '${update.action}',
+            '${JSON.stringify(update)}'
+          )
+        `);
+      }
       syncedUpdates++;
     }
 
     const syncDuration = performance.now() - startTime;
 
     // Get sync events
-    const syncEvents = await this.sql`
+    const syncEvents = await this.pool.query(`
       SELECT content, metadata, created_at
       FROM nextjs_ws_messages
       WHERE message_type = 'data_sync'
       ORDER BY created_at DESC
       LIMIT 5
-    `;
+    `);
 
-    return `Real-time data sync: ${syncedUpdates} updates synced in ${syncDuration.toFixed(1)}ms, ${syncEvents.length} sync events logged`;
+    return `Real-time data sync: ${syncedUpdates} updates synced in ${syncDuration.toFixed(1)}ms, ${syncEvents.rows.length} sync events logged`;
   }
 
   async testWebSocketTransactions() {
     // Test transaction handling with WebSocket connections
+    const client = await this.pool.connect();
     try {
-      const result = await this.sql.transaction(async (sql) => {
-        // Create a new user
-        const newUser = await sql`
-          INSERT INTO nextjs_ws_users (username, email, status, profile)
-          VALUES (
-            'ws_transaction_user',
-            'wstransaction@nextjs.com',
-            'online',
-            '{"transactionTest": true}'
-          )
-          RETURNING id, username
-        `;
+      await client.query('BEGIN');
+      
+      // Create a new user
+      const newUser = await client.query(`
+        INSERT INTO nextjs_ws_users (username, email, status, profile)
+        VALUES (
+          'ws_transaction_user',
+          'wstransaction@nextjs.com',
+          'online',
+          '{"transactionTest": true}'
+        )
+        RETURNING id, username
+      `);
 
-        // Create a WebSocket connection for the user
-        const connectionId = `ws_trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        await sql`
-          INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id, metadata)
-          VALUES (
-            ${newUser[0].id},
-            ${connectionId},
-            'general',
-            '{"transactionTest": true}'
-          )
-        `;
+      // Create a WebSocket connection for the user
+      const connectionId = `ws_trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await client.query(`
+        INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id, metadata)
+        VALUES (
+          ${newUser.rows[0].id},
+          '${connectionId}',
+          'general',
+          '{"transactionTest": true}'
+        )
+      `);
 
-        // Send a welcome message
-        await sql`
-          INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
-          VALUES (
-            'general',
-            ${newUser[0].id},
-            'system',
-            'Welcome to the chat!',
-            '{"automated": true, "transactionTest": true}'
-          )
-        `;
+      // Send a welcome message
+      await client.query(`
+        INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
+        VALUES (
+          'general',
+          ${newUser.rows[0].id},
+          'system',
+          'Welcome to the chat!',
+          '{"automated": true, "transactionTest": true}'
+        )
+      `);
 
-        return { user: newUser[0], connectionId };
-      });
-
+      await client.query('COMMIT');
+      const result = { user: newUser.rows[0], connectionId };
+      
       return `WebSocket transactions: User ${result.user.id} created with connection ${result.connectionId} atomically`;
     } catch (error) {
+      await client.query('ROLLBACK');
       return `WebSocket transactions: Failed - ${error.message}`;
+    } finally {
+      client.release();
     }
   }
 
@@ -512,7 +526,7 @@ class NextJSWebSocketTest {
     // Concurrent message retrievals (typical for active chat)
     for (let i = 0; i < 10; i++) {
       operations.push(
-        this.sql`
+        this.pool.query(`
           SELECT 
             m.id,
             m.content,
@@ -523,19 +537,19 @@ class NextJSWebSocketTest {
           WHERE m.room_id = 'general'
           ORDER BY m.created_at DESC
           LIMIT 20
-        `
+        `)
       );
     }
 
     // Concurrent presence updates
-    const users = await this.sql`SELECT id FROM nextjs_ws_users LIMIT 3`;
-    for (const user of users) {
+    const users = await this.pool.query(`SELECT id FROM nextjs_ws_users LIMIT 3`);
+    for (const user of users.rows) {
       operations.push(
-        this.sql`
+        this.pool.query(`
           UPDATE nextjs_ws_connections
           SET last_activity = NOW()
           WHERE user_id = ${user.id}
-        `
+        `)
       );
     }
 
@@ -547,18 +561,18 @@ class NextJSWebSocketTest {
     const batchMessages = [];
     
     for (let i = 0; i < 50; i++) {
-      if (users.length > 0) {
+      if (users.rows.length > 0) {
         batchMessages.push(
-          this.sql`
+          this.pool.query(`
             INSERT INTO nextjs_ws_messages (room_id, user_id, message_type, content, metadata)
             VALUES (
               'performance_test',
-              ${users[i % users.length].id},
+              ${users.rows[i % users.rows.length].id},
               'performance',
-              ${`Performance test message ${i + 1}`},
-              ${JSON.stringify({ batch: true, index: i })}
+              'Performance test message ${i + 1}',
+              '${JSON.stringify({ batch: true, index: i })}'
             )
-          `
+          `)
         );
       }
     }
@@ -575,35 +589,35 @@ class NextJSWebSocketTest {
     // Test connection cleanup on user deletion
     try {
       // Create a user and connection
-      const testUser = await this.sql`
+      const testUser = await this.pool.query(`
         INSERT INTO nextjs_ws_users (username, email, status)
         VALUES ('error_test_user', 'error@test.com', 'online')
         RETURNING id
-      `;
+      `);
 
-      await this.sql`
+      await this.pool.query(`
         INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id)
-        VALUES (${testUser[0].id}, 'error_test_conn', 'general')
-      `;
+        VALUES (${testUser.rows[0].id}, 'error_test_conn', 'general')
+      `);
 
       // Try to delete user (should handle foreign key constraint)
-      await this.sql`DELETE FROM nextjs_ws_users WHERE id = ${testUser[0].id}`;
+      await this.pool.query(`DELETE FROM nextjs_ws_users WHERE id = ${testUser.rows[0].id}`);
       
     } catch (error) {
       if (error.message.includes('foreign key') || error.code === '23503') {
         handledErrors++;
         // Clean up connections first, then user
-        await this.sql`DELETE FROM nextjs_ws_connections WHERE connection_id = 'error_test_conn'`;
-        await this.sql`DELETE FROM nextjs_ws_users WHERE username = 'error_test_user'`;
+        await this.pool.query(`DELETE FROM nextjs_ws_connections WHERE connection_id = 'error_test_conn'`);
+        await this.pool.query(`DELETE FROM nextjs_ws_users WHERE username = 'error_test_user'`);
       }
     }
 
     // Test invalid room handling
     try {
-      await this.sql`
+      await this.pool.query(`
         INSERT INTO nextjs_ws_messages (room_id, user_id, content)
         VALUES ('nonexistent_room', 99999, 'This should fail')
-      `;
+      `);
     } catch (error) {
       if (error.message.includes('foreign key') || error.code === '23503') {
         handledErrors++;
@@ -612,16 +626,16 @@ class NextJSWebSocketTest {
 
     // Test duplicate connection handling
     try {
-      const users = await this.sql`SELECT id FROM nextjs_ws_users LIMIT 1`;
+      const users = await this.pool.query(`SELECT id FROM nextjs_ws_users LIMIT 1`);
       if (users.length > 0) {
-        await this.sql`
+        await this.pool.query(`
           INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id)
           VALUES (${users[0].id}, 'duplicate_conn_test', 'general')
-        `;
-        await this.sql`
+        `);
+        await this.pool.query(`
           INSERT INTO nextjs_ws_connections (user_id, connection_id, room_id)
           VALUES (${users[0].id}, 'duplicate_conn_test', 'general')
-        `;
+        `);
       }
     } catch (error) {
       if (error.message.includes('duplicate key') || error.code === '23505') {
@@ -633,17 +647,17 @@ class NextJSWebSocketTest {
   }
 
   async cleanup() {
-    try {
-      // Clean up test data in correct order
-      await this.sql`DELETE FROM nextjs_ws_connections WHERE 1=1`;
-      await this.sql`DELETE FROM nextjs_ws_messages WHERE 1=1`;
-      await this.sql`DELETE FROM nextjs_ws_rooms WHERE 1=1`;
-      await this.sql`DELETE FROM nextjs_ws_users WHERE 1=1`;
-    } catch (error) {
-      console.log(`Cleanup warning: ${error.message}`);
-    }
-
     if (this.pool) {
+      try {
+        // Clean up test data in correct order
+        await this.pool.query('DELETE FROM nextjs_ws_connections WHERE 1=1');
+        await this.pool.query('DELETE FROM nextjs_ws_messages WHERE 1=1');
+        await this.pool.query('DELETE FROM nextjs_ws_rooms WHERE 1=1');
+        await this.pool.query('DELETE FROM nextjs_ws_users WHERE 1=1');
+      } catch (error) {
+        console.log(`Cleanup warning: ${error.message}`);
+      }
+      
       await this.pool.end();
     }
   }

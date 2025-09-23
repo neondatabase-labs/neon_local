@@ -90,7 +90,7 @@ class PrismaWebSocketTester {
     console.log('🔧 Setting up Prisma for WebSocket...');
     
     await this.runTest('Generate Prisma Client', async () => {
-      const { stdout, stderr } = await execAsync('npx prisma generate', {
+      const { stdout, stderr } = await execAsync('npx prisma generate --schema=./tests/prisma/schema.prisma', {
         cwd: projectRoot,
         env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL }
       });
@@ -105,7 +105,7 @@ class PrismaWebSocketTester {
     });
 
     await this.runTest('Sync Database Schema', async () => {
-      await execAsync('npx prisma db push --force-reset', {
+      await execAsync('npx prisma db push --force-reset --schema=./tests/prisma/schema.prisma', {
         cwd: projectRoot,
         env: { 
           ...process.env, 
@@ -118,7 +118,7 @@ class PrismaWebSocketTester {
 
     await this.runTest('Initialize Prisma with Neon WebSocket Adapter', async () => {
       // Import Prisma client after generation
-      const { PrismaClient } = await import('../../app/generated/prisma/index.js');
+      const { PrismaClient } = await import('@prisma/client');
       const { neon } = await import('@neondatabase/serverless');
       
       // Create neon connection with WebSocket configuration

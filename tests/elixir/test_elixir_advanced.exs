@@ -29,8 +29,10 @@ defmodule ElixirAdvancedTest do
     password: "npg",
     hostname: "localhost",
     port: 5432,
-    pool: Ecto.Adapters.SQL.Sandbox,
-    pool_size: 10
+    pool: DBConnection.ConnectionPool,
+    pool_size: 15,
+    queue_target: 5000,
+    queue_interval: 1000
   )
 
   # Define the repository
