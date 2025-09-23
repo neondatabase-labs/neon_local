@@ -1,203 +1,185 @@
-# Laravel Test Suite for Neon Local
+# Laravel ORM Tests for Neon Local
 
-This directory contains comprehensive tests for Laravel applications connecting to the Neon Local container, testing various connection methods and Laravel-specific database features.
+This directory contains comprehensive PHP/Laravel tests that validate Laravel Eloquent ORM functionality with PostgreSQL via the Neon Local container.
 
-## Test Files
+## Overview
 
-### Core Test Suites
+These tests use **actual PHP and Laravel ORM** (not JavaScript simulations) to validate:
+- Laravel Eloquent ORM operations
+- Complex database relationships
+- Advanced PostgreSQL features
+- Session vs Transaction mode behavior (PgBouncer)
+- Performance optimization patterns
 
-- **`test-laravel-comprehensive.js`** - Complete Laravel ORM functionality with direct PostgreSQL connections
-- **`test-laravel-advanced.js`** - Advanced Laravel features: mutators/accessors, polymorphic relationships, JSONB, full-text search, CTEs
-- **`test-laravel-http.js`** - Laravel with Neon serverless adapter via HTTP connections  
-- **`test-laravel-websocket.js`** - Laravel with Neon serverless adapter via WebSocket connections
-- **`test-laravel-session-mode.js`** - Session-specific features using neondb_session database entry in PgBouncer
-- **`run-laravel-tests.js`** - Test runner for all Laravel test suites
+Since Laravel uses standard PostgreSQL connections (not serverless drivers like Neon's JavaScript SDK), these tests focus on **direct PostgreSQL connectivity** rather than HTTP/WebSocket transport layers.
 
-### Test Coverage
+## Test Structure
 
-#### Laravel ORM Features Tested
+### Test Suites
 
-**Basic Features (Comprehensive Tests):**
-- **Eloquent Models**: Model creation, relationships, and queries
-- **Database Migrations**: Schema creation and modification
-- **Query Builder**: Raw queries, joins, aggregations
-- **Relationships**: HasMany, BelongsTo, ManyToMany relationships
-- **Transactions**: Database transactions and rollbacks  
-- **Validation**: Model validation and constraints
-- **Pagination**: Laravel pagination features
-- **Soft Deletes**: Laravel soft delete functionality
-- **Timestamps**: Automatic timestamp handling
-- **Scopes**: Local and global query scopes
+1. **Comprehensive Laravel Tests** (`LaravelComprehensiveTests.php`)
+   - Basic CRUD operations with Eloquent models
+   - Relationships (one-to-one, one-to-many, many-to-many)
+   - Query builder and advanced querying
+   - JSON/JSONB operations
+   - Database transactions
+   - Bulk operations
+   - Collection operations
+   - Model events and error handling
 
-**Advanced Features (Advanced Tests):**
-- **Mutators/Accessors**: Attribute casting and transformation
-- **Polymorphic Relationships**: MorphTo, MorphMany relationships
-- **Subqueries & CTEs**: Common Table Expressions and complex queries
-- **Full-Text Search**: PostgreSQL full-text search integration
-- **JSONB Operations**: Advanced JSON queries and operations
-- **Array Operations**: PostgreSQL array handling and queries
-- **Upserts**: ON CONFLICT DO UPDATE operations
-- **Chunking**: Large dataset processing and pagination
-- **Database Views**: Complex view queries and aggregations
-- **UUID Support**: UUID primary keys and operations
-- **Window Functions**: Advanced SQL analytics functions
+2. **Advanced Laravel Tests** (`LaravelAdvancedTests.php`)
+   - Complex polymorphic relationships
+   - Advanced PostgreSQL features (arrays, window functions, CTEs)
+   - Model inheritance patterns
+   - Custom query builders
+   - Database views and full-text search
+   - Geospatial queries (simulated)
+   - Concurrent operations
+   - Performance optimizations
 
-#### Connection Types Tested
-1. **Direct PostgreSQL** (via `pg` driver)
-   - Standard Laravel database configuration
-   - Direct connection to PgBouncer on port 5432
-   - Full Laravel ORM functionality
+3. **Laravel Session Mode Tests** (`LaravelSessionModeTests.php`)
+   - Session-specific features using `neondb_session` database
+   - Temporary tables with session persistence
+   - Session variables and prepared statements
+   - Connection behavior comparison (session vs transaction mode)
+   - Laravel ORM integration with PgBouncer session pooling
 
-2. **HTTP Connections** (via Neon serverless driver)
-   - Laravel configured to use Neon HTTP endpoints
-   - Tests HTTP-compatible Laravel operations
-   - Validates connection pooling and performance
+### Models
 
-3. **WebSocket Connections** (via Neon serverless driver)  
-   - Laravel configured to use Neon WebSocket connections
-   - Tests WebSocket-compatible Laravel operations
-   - Validates real-time connection handling
+- **User** - Primary user entity with profiles, roles, posts, and orders
+- **Post** - Blog posts with categories, tags, and comments
+- **Category** - Post categorization
+- **Profile** - User profile information (one-to-one)
+- **Role** - User roles and permissions (many-to-many)
+- **Comment** - Post comments
+- **Tag** - Post tags (many-to-many)
+- **Order** - User orders
 
-#### Test Categories
-- **Basic CRUD Operations**: Create, Read, Update, Delete
-- **Advanced Queries**: Joins, subqueries, aggregations
-- **Relationship Management**: Eager loading, lazy loading
-- **Transaction Handling**: Commit, rollback, savepoints
-- **Performance Testing**: Bulk operations, query optimization
-- **Error Handling**: Connection failures, constraint violations
-- **Schema Operations**: Migrations, table modifications
+## Prerequisites
 
-## Running Tests
+### PHP Dependencies
 
-### Prerequisites
+The tests require PHP 8.1+ and the following Composer packages:
+
 ```bash
-# Ensure Neon Local container is running
-docker-compose up -d
-
-# Install Node.js dependencies (if not already installed)
-npm install
+cd tests/laravel
+composer install
 ```
 
-### Individual Test Suites
+### Required Packages
+
+- `illuminate/database` - Laravel's Eloquent ORM
+- `illuminate/events` - Event system
+- `illuminate/container` - Dependency injection
+- `illuminate/pagination` - Pagination support
+- `illuminate/validation` - Data validation
+- `doctrine/dbal` - Database abstraction layer
+- `nesbot/carbon` - Date manipulation
+
+### Database Setup
+
+The tests connect to:
+- **Default connection**: `localhost:5432/neondb` (transaction mode)
+- **Session connection**: `localhost:5432/neondb_session` (session mode)
+
+Both connections use:
+- Username: `neon`
+- Password: `npg`
+
+## Running the Tests
+
+### Run All Laravel Test Suites
+
 ```bash
-# Run comprehensive Laravel tests (PostgreSQL)
-node tests/laravel/test-laravel-comprehensive.js
-
-# Run Laravel HTTP tests (Neon serverless via HTTP)
-node tests/laravel/test-laravel-http.js
-
-# Run Laravel WebSocket tests (Neon serverless via WebSocket)  
-node tests/laravel/test-laravel-websocket.js
+cd tests/laravel
+php run-laravel-tests.php
 ```
 
-### All Laravel Tests
+### Run Individual Test Suites
+
 ```bash
-# Run all Laravel test suites
-node tests/laravel/run-laravel-tests.js
+# Comprehensive tests only
+php -r "require 'vendor/autoload.php'; (new LaravelTests\LaravelComprehensiveTests())->runAllTests();"
+
+# Advanced tests only  
+php -r "require 'vendor/autoload.php'; (new LaravelTests\LaravelAdvancedTests())->runAllTests();"
+
+# Session mode tests only
+php -r "require 'vendor/autoload.php'; (new LaravelTests\LaravelSessionModeTests())->runAllTests();"
 ```
 
-## Laravel Configuration Examples
+## Test Categories
 
-### Standard PostgreSQL Configuration
-```javascript
-// Laravel database configuration for direct PostgreSQL
-const config = {
-  client: 'postgresql',
-  connection: {
-    host: 'localhost',
-    port: 5432,
-    user: 'neon', 
-    password: 'npg',
-    database: 'neondb'
-  }
-};
-```
+### Basic Laravel Features
+- ✅ Eloquent model CRUD operations
+- ✅ Model relationships and eager loading
+- ✅ Query scopes and accessors/mutators
+- ✅ Database migrations and schema operations
+- ✅ Collection operations and data manipulation
 
-### HTTP Configuration (Neon Serverless)
-```javascript
-// Laravel with Neon HTTP adapter
-import { neon, neonConfig } from '@neondatabase/serverless';
+### Advanced Laravel Features  
+- ✅ Polymorphic relationships
+- ✅ Many-to-many with pivot data
+- ✅ Model inheritance patterns
+- ✅ Custom query builders
+- ✅ Database transactions with savepoints
 
-neonConfig.fetchEndpoint = 'http://127.0.0.1:5432/sql';
-neonConfig.poolQueryViaFetch = true;
+### PostgreSQL Integration
+- ✅ JSON/JSONB column operations
+- ✅ Array data types
+- ✅ Window functions and CTEs
+- ✅ Full-text search capabilities
+- ✅ Database views and complex queries
 
-const sql = neon('postgresql://neon:npg@localhost:5432/neondb');
-```
+### Session Mode Features
+- ✅ Temporary table persistence
+- ✅ Session variable management
+- ✅ Prepared statement caching
+- ✅ Connection pooling behavior
+- ✅ PgBouncer session vs transaction mode
 
-### WebSocket Configuration (Neon Serverless)
-```javascript
-// Laravel with Neon WebSocket adapter
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import ws from 'ws';
+### Performance & Reliability
+- ✅ N+1 query problem resolution
+- ✅ Query optimization analysis
+- ✅ Concurrent operation handling
+- ✅ Error handling and constraints
+- ✅ Connection efficiency testing
 
-neonConfig.webSocketConstructor = ws;
-neonConfig.useSecureWebSocket = false;
-neonConfig.poolQueryViaFetch = false;
-neonConfig.wsProxy = (host, port) => 'localhost:5432';
-neonConfig.pipelineConnect = false;
+## Architecture
 
-const pool = new Pool({
-  connectionString: 'postgresql://neon:npg@localhost:5432/neondb'
-});
-```
+### Bootstrap System
+- `LaravelTestBootstrap.php` - Initializes Laravel components without full framework
+- Sets up Illuminate Database with Capsule manager
+- Configures multiple database connections
+- Handles pagination and container setup
+
+### Migration System
+- Database schema creation via Laravel's Schema Builder
+- Automatic table creation and cleanup
+- Foreign key constraints and indexes
+- JSON column support for metadata
+
+### Connection Management
+- Primary connection: Standard PostgreSQL via PgBouncer transaction mode
+- Session connection: PostgreSQL via PgBouncer session mode
+- Connection pooling and reuse validation
+- Performance monitoring and analysis
+
+## Key Differences from JavaScript Tests
+
+1. **Real Laravel ORM**: Uses actual Eloquent models instead of raw SQL
+2. **Type Safety**: PHP type hints and Laravel's built-in validation
+3. **No Serverless Drivers**: Direct PostgreSQL connections only
+4. **Framework Integration**: Full Laravel component integration
+5. **Advanced Features**: Proper model relationships, events, and collections
 
 ## Expected Results
 
-### Success Criteria
-- ✅ All basic CRUD operations work correctly
-- ✅ Laravel relationships function properly  
-- ✅ Transactions commit and rollback as expected
-- ✅ Query builder generates correct SQL
-- ✅ Eloquent models handle validation
-- ✅ Migrations run successfully
-- ✅ Connection pooling works under load
-- ✅ Error handling is robust
+All test suites should pass with 100% success rate, demonstrating:
+- Complete Laravel ORM compatibility with Neon Local
+- Proper PostgreSQL feature support
+- Reliable session mode behavior
+- Optimal performance characteristics
+- Comprehensive error handling
 
-### Performance Benchmarks
-- **PostgreSQL Direct**: ~200-300 queries/second
-- **HTTP Connections**: ~50-100 queries/second  
-- **WebSocket Connections**: ~100-200 queries/second
-
-## Troubleshooting
-
-### Common Issues
-
-#### Connection Failures
-```
-Error: Connection refused
-```
-- Ensure Neon Local container is running
-- Check that port 5432 is accessible
-- Verify database credentials (neon:npg)
-
-#### Laravel ORM Errors
-```
-Error: Table doesn't exist
-```
-- Run migrations before tests
-- Check database schema setup
-- Verify table creation in test setup
-
-#### WebSocket Issues
-```
-Error: WebSocket connection failed
-```
-- Ensure `ws` package is installed
-- Check WebSocket proxy configuration
-- Verify `neonConfig.pipelineConnect = false`
-
-### Debug Mode
-Set `DEBUG=true` environment variable for detailed logging:
-```bash
-DEBUG=true node tests/laravel/test-laravel-comprehensive.js
-```
-
-## Integration with Laravel Applications
-
-These tests demonstrate how to integrate Laravel applications with Neon Local:
-
-1. **Development**: Use direct PostgreSQL connections for full Laravel features
-2. **Testing**: Use HTTP connections for fast, stateless test scenarios  
-3. **Real-time**: Use WebSocket connections for applications requiring persistent connections
-
-The test suite validates that Laravel applications can seamlessly work with Neon Local across all connection types, ensuring compatibility and performance.
+The tests validate that Laravel applications can seamlessly integrate with Neon Local for both development and production scenarios.
