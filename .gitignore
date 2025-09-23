@@ -3,3 +3,16 @@
 app/haproxy/tests/node_modules
 app/generated/
 node_modules/
+
+# Rust build artifacts
+tests/rust/target/
+
+# Java build artifacts  
+tests/java/target/
+
+# All target directories
+**/target/
+
+# Laravel test generated files
+tests/laravel/composer.lock
+tests/laravel/vendor/

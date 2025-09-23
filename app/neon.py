@@ -10,15 +10,35 @@ class NeonAPI:
         self.project_id = os.getenv("NEON_PROJECT_ID")
 
     def _headers(self):
-        # Determine user agent based on CLIENT environment variable
-        client = os.getenv("CLIENT", "").lower()
-        user_agent = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
+        # Build version-aware user agent string
+        user_agent = self._build_user_agent()
         
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "User-Agent": user_agent
         }
+    
+    def _build_user_agent(self):
+        """Build user agent string with container and extension version information."""
+        # Get container version from environment variable or default
+        container_version = os.getenv("NEON_LOCAL_CONTAINER_VERSION", "unknown")
+        
+        # Get VSCode extension version if running via VSCode
+        client = os.getenv("CLIENT", "").lower()
+        vscode_extension_version = os.getenv("NEON_LOCAL_VSCODE_EXTENSION_VERSION", "unknown")
+        
+        if client == "vscode" and vscode_extension_version != "unknown":
+            # Both container and extension versions
+            user_agent = f"_neon-local-vscode-extension_{vscode_extension_version}_{container_version}"
+        elif client == "vscode":
+            # VSCode detected but no extension version provided
+            user_agent = f"_neon-local-vscode-extension_unknown_{container_version}"
+        else:
+            # Standalone container only
+            user_agent = f"_neon_local_container_{container_version}"
+
+        return user_agent
 
     def get_endpoint_host(self, project_id, branch_id):
         if not self.api_key:

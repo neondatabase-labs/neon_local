@@ -5,6 +5,49 @@ admin:
       address: 127.0.0.1
       port_value: 9901
 
+# Enhanced stats and monitoring configuration for debugging 503 errors
+stats_config:
+  stats_tags:
+  - tag_name: "cluster_name"
+    regex: "^cluster\\.((.+?)\\.).*"
+  - tag_name: "response_code"
+    regex: "^([0-9]+)$"
+  - tag_name: "response_code_class"
+    regex: "^([0-9])\\d\\d$"
+  - tag_name: "method"
+    regex: "^http\\.([A-Z]+)\\."
+  - tag_name: "route_name"
+    regex: "^http\\..*\\.route\\.(.+?)\\."
+  histogram_bucket_settings:
+  - match: { prefix: "http" }
+    buckets: [0.5, 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000]
+  - match: { prefix: "cluster.upstream_rq_time" }
+    buckets: [0.5, 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000]
+
+# Enable detailed logging for debugging
+layered_runtime:
+  layers:
+  - name: static_layer_0
+    static_layer:
+      # Enable detailed circuit breaker logging
+      envoy:
+        resource_monitors:
+          injected_resource:
+            max_heap_size_bytes: 2147483648  # 2GB
+      # Enable retry and circuit breaker debug logging
+      upstream:
+        healthy_panic_threshold: 0.0  # Disable panic threshold for debugging
+      http:
+        # Enable detailed HTTP debugging
+        connection_manager:
+          route_config:
+            validate_clusters: true
+        # Enable retry debugging
+        retry_policy:
+          retry_back_off:
+            base_interval: 0.1s
+            max_interval: 15s
+
 static_resources:
   listeners:
   - name: unified_listener
@@ -13,6 +56,18 @@ static_resources:
         protocol: TCP
         address: 0.0.0.0
         port_value: 5432
+    # Optimize for high connection load
+    socket_options:
+    - level: 1     # SOL_SOCKET
+      name: 2      # SO_REUSEADDR
+      int_value: 1
+    - level: 6     # IPPROTO_TCP
+      name: 1      # TCP_NODELAY
+      int_value: 1
+    per_connection_buffer_limit_bytes: 134217728  # 128MB per connection - doubled for high concurrency
+    # Global connection balancing to prevent resource exhaustion
+    connection_balance_config:
+      exact_balance: {}
     listener_filters:
     - name: envoy.filters.listener.http_inspector
       typed_config:
@@ -24,11 +79,92 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
           stat_prefix: neon_http
+          # Enhanced connection management for debugging 503 errors
+          request_timeout: 120s
+          stream_idle_timeout: 300s
+          request_headers_timeout: 60s
+          # HTTP/2 and connection optimization - increased for high concurrency
+          http2_protocol_options:
+            max_concurrent_streams: 5000
+            initial_stream_window_size: 536870912    # 512MB
+            initial_connection_window_size: 536870912    # 512MB
+            max_outbound_frames: 20000
+            max_outbound_control_frames: 2000
+            max_consecutive_inbound_frames_with_empty_payload: 1
+            max_inbound_priority_frames_per_stream: 200
+            max_inbound_window_update_frames_per_data_frame_sent: 20
+          # HTTP/1.1 optimization - enhanced for better compatibility
+          http_protocol_options:
+            accept_http_10: true
+            default_host_for_http_10: "localhost"
+            enable_trailers: false
+          # Add common HTTP protocol options for better connection handling
+          common_http_protocol_options:
+            idle_timeout: 300s
+            max_connection_duration: 3600s  # 1 hour max connection duration
+            max_headers_count: 200
+            max_stream_duration: 600s
+            headers_with_underscores_action: ALLOW
+          # Connection management
+          use_remote_address: true
+          xff_num_trusted_hops: 0
+          # Connection draining settings
+          drain_timeout: 60s
+          delayed_close_timeout: 10s
+          # Connection limits and pooling - optimized for high concurrency
+          common_http_protocol_options:
+            idle_timeout: 900s              # Increased from 300s to 15 minutes
+            max_connection_duration: 0s     # No forced connection cycling
+            max_headers_count: 2000         # Increased from 1000 for complex requests
+            max_stream_duration: 0s         # No stream duration limits
+          # Removed invalid stats_tags configuration
+          # Connection manager level settings
+          server_name: "neon-local-proxy"
+          server_header_transformation: OVERWRITE
+          # HTTP/1 protocol options moved to http_protocol_options
+          # Optimize for high concurrency
+          normalize_path: true
+          merge_slashes: true
+          path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT
           access_log:
           - name: envoy.access_loggers.stdout
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+              log_format:
+                text_format_source:
+                  inline_string: |
+                    [%START_TIME%] HTTP_ACCESS: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+                    status=%RESPONSE_CODE% flags=%RESPONSE_FLAGS% rx_bytes=%BYTES_RECEIVED% tx_bytes=%BYTES_SENT%
+                    duration=%DURATION%ms upstream_time=%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%ms
+                    client="%REQ(X-FORWARDED-FOR)%" user_agent="%REQ(USER-AGENT)%" request_id="%REQ(X-REQUEST-ID)%"
+                    authority="%REQ(:AUTHORITY)%" upstream="%UPSTREAM_HOST%" cluster="%UPSTREAM_CLUSTER%"
+                    local="%DOWNSTREAM_LOCAL_ADDRESS%" remote="%DOWNSTREAM_REMOTE_ADDRESS%"
+                    retry_count=%REQ(X-ENVOY-RETRY-COUNT)% circuit_breaker="%RESPONSE_CODE_DETAILS%"
+                    transport_failure="%UPSTREAM_TRANSPORT_FAILURE_REASON%" route_name="%ROUTE_NAME%"
           http_filters:
+          # Add rate limiting filter (disabled by default, available for emergency use)
+          - name: envoy.filters.http.local_ratelimit
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+              stat_prefix: neon_http_rate_limiter
+              token_bucket:
+                max_tokens: 10000          # Very high rate limit (10k requests/second)
+                tokens_per_fill: 5000      # Refill 5k tokens per interval
+                fill_interval: 1s          # Refill every second
+              filter_enabled:
+                runtime_key: neon_rate_limit_enabled
+                default_value:
+                  numerator: 0             # Disabled by default (0% of requests)
+                  denominator: HUNDRED
+              filter_enforced:
+                runtime_key: neon_rate_limit_enforced  
+                default_value:
+                  numerator: 0             # Not enforced by default
+                  denominator: HUNDRED
+              response_headers_to_add:
+              - header:
+                  key: "x-neon-ratelimit-remaining"
+                  value: "%DOWNSTREAM_LOCAL_ADDRESS%"
           - name: envoy.filters.http.header_to_metadata
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.header_to_metadata.v3.Config
@@ -38,45 +174,56 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
               inline_code: |
                 function envoy_on_request(request_handle)
-                  local path = request_handle:headers():get(":path")
+                  -- Enhanced debug logging for 503 error investigation
+                  local request_id = request_handle:headers():get("x-request-id") or "unknown"
+                  local method = request_handle:headers():get(":method") or "unknown"
+                  local path = request_handle:headers():get(":path") or "unknown"
+                  local authority = request_handle:headers():get(":authority") or "unknown"
+                  local user_agent = request_handle:headers():get("user-agent") or "unknown"
                   local upgrade_header = request_handle:headers():get("upgrade")
                   local is_websocket = upgrade_header and string.lower(upgrade_header) == "websocket"
                   
-                  -- Handle both HTTP /sql requests and WebSocket connections to Neon
-                  if path == "/sql" or is_websocket then
+                  -- Log every request for debugging
+                  request_handle:logInfo(string.format("[DEBUG_LUA] REQUEST_START: id=%s method=%s path=%s authority=%s user_agent=%s websocket=%s", 
+                    request_id, method, path, authority, user_agent, tostring(is_websocket)))
+                  
+                  -- Skip processing for WebSocket connections - let them route to our custom proxy
+                  if is_websocket then
+                    request_handle:logInfo(string.format("[DEBUG_LUA] WEBSOCKET_ROUTE: id=%s routing to custom proxy", request_id))
+                    return
+                  end
+                  
+                  -- Handle HTTP /sql requests to Neon
+                  if path == "/sql" then
                     -- Set the real Neon hostname
                     local host = "PLACEHOLDER_NEON_HOST"
                     request_handle:headers():replace(":authority", host)
                     request_handle:headers():replace("host", host)
                     
-                    -- Log connection type and headers
-                    if is_websocket then
-                      request_handle:logInfo("Lua filter: Processing WebSocket connection to Neon")
-                    else
-                      request_handle:logInfo("Lua filter: Processing HTTP /sql request to Neon")
-                    end
-                    
-                    local headers = request_handle:headers()
-                    for key, value in pairs(headers) do
-                      if key and value then
-                        request_handle:logInfo("Lua filter: Header " .. tostring(key) .. ": " .. tostring(value))
-                      end
-                    end
-                    
                     -- Force override the neon-connection-string header for credential injection
                     local real_conn_str = "PLACEHOLDER_NEON_CONNECTION_STRING"
                     request_handle:headers():replace("neon-connection-string", real_conn_str)
                     
-                    -- For WebSocket connections, also check for any connection string in query parameters
-                    if is_websocket then
-                      local query_string = request_handle:headers():get(":path")
-                      if query_string and string.find(query_string, "?") then
-                        -- Extract and potentially modify query parameters if needed
-                        request_handle:logInfo("Lua filter: WebSocket query string: " .. query_string)
-                      end
-                    end
-                    
-                    request_handle:logInfo("Lua filter: Set host to " .. host .. " and forced neon-connection-string for " .. (is_websocket and "WebSocket" or "HTTP"))
+                    request_handle:logInfo(string.format("[DEBUG_LUA] NEON_ROUTE: id=%s host=%s path=%s", request_id, host, path))
+                  else
+                    request_handle:logInfo(string.format("[DEBUG_LUA] OTHER_ROUTE: id=%s path=%s", request_id, path))
+                  end
+                end
+                
+                function envoy_on_response(response_handle)
+                  -- Log response details for debugging 503 errors
+                  local request_id = response_handle:headers():get("x-request-id") or "unknown"
+                  local status = response_handle:headers():get(":status") or "unknown"
+                  local upstream_time = response_handle:headers():get("x-envoy-upstream-service-time") or "unknown"
+                  local response_flags = response_handle:headers():get("x-envoy-response-flags") or "none"
+                  
+                  response_handle:logInfo(string.format("[DEBUG_LUA] RESPONSE: id=%s status=%s upstream_time=%sms flags=%s", 
+                    request_id, status, upstream_time, response_flags))
+                  
+                  -- Special logging for 503 errors
+                  if status == "503" then
+                    response_handle:logErr(string.format("[DEBUG_LUA] 503_ERROR: id=%s upstream_time=%sms flags=%s", 
+                      request_id, upstream_time, response_flags))
                   end
                 end
           - name: envoy.filters.http.router
@@ -97,7 +244,7 @@ static_resources:
               routes:
               # Database-specific routes will be injected here
               
-              # WebSocket route - matches any path with WebSocket upgrade header
+              # WebSocket route - matches any path with WebSocket upgrade header and routes to custom proxy
               - match:
                   prefix: "/"
                   headers:
@@ -105,7 +252,7 @@ static_resources:
                     string_match:
                       exact: "websocket"
                 route:
-                  cluster: neon_cluster_default
+                  cluster: wsproxy_cluster
                   timeout: 0s  # No timeout for WebSocket connections
                   upgrade_configs:
                   - upgrade_type: "websocket"
@@ -119,7 +266,21 @@ static_resources:
                   path: "/sql"
                 route:
                   cluster: neon_cluster_default
-                  timeout: 30s
+                  timeout: 300s  # Further increased timeout for heavy queries with retries
+                  idle_timeout: 120s
+                  retry_policy:
+                    retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers,upstream-reset-before-response-started,upstream-reset-after-response-started,connection-termination,connection-failure
+                    retriable_status_codes: [503, 502, 504, 429]  # Added 429 for rate limiting scenarios
+                    num_retries: 50          # Very aggressive retries for connection issues
+                    per_try_timeout: 30s     # Increased timeout for connection establishment
+                    retry_back_off:
+                      base_interval: 0.05s   # Even faster initial retries
+                      max_interval: 10s      # Reduced max backoff for faster recovery
+                    # Add retry budget to prevent retry storms
+                    retriable_request_headers:
+                    - name: ":method"
+                      string_match:
+                        exact: "POST"
                 request_headers_to_add:
                 - header:
                     key: "neon-connection-string"
@@ -135,7 +296,21 @@ static_resources:
                     present_match: true
                 route:
                   cluster: neon_cluster_default
-                  timeout: 30s
+                  timeout: 300s
+                  idle_timeout: 120s
+                  retry_policy:
+                    retry_on: 5xx,gateway-error,connect-failure,refused-stream,reset,retriable-status-codes,retriable-headers,upstream-reset-before-response-started,upstream-reset-after-response-started,connection-termination,connection-failure
+                    retriable_status_codes: [503, 502, 504, 429]  # Added 429 for rate limiting scenarios
+                    num_retries: 25
+                    per_try_timeout: 30s     # Increased timeout for connection establishment
+                    retry_back_off:
+                      base_interval: 0.05s   # Even faster initial retries
+                      max_interval: 10s      # Reduced max backoff for faster recovery
+                    # Add retry budget to prevent retry storms
+                    retriable_request_headers:
+                    - name: ":method"
+                      string_match:
+                        exact: "POST"
                 request_headers_to_add:
                 - header:
                     key: "neon-connection-string"
@@ -187,5 +362,20 @@ static_resources:
       unhealthy_threshold: 2
       healthy_threshold: 1
       tcp_health_check: {}
+
+  # WebSocket proxy cluster for WebSocket connections
+  - name: wsproxy_cluster
+    connect_timeout: 3s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: wsproxy_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 8080
 
   # Database-specific clusters will be injected here

@@ -1,13 +1,133 @@
-// Prisma schema for testing with Neon Local proxy
+// Comprehensive Prisma schema for testing with Neon Local proxy
 
 generator client {
   provider = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  name        String?
+  age         Int?
+  isActive    Boolean  @default(true)
+  salary      Decimal? @db.Decimal(10, 2)
+  tags        String[]
+  bio         String?  // Added for test compatibility
+  metadata    Json?    // Added for test compatibility
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  posts    Post[]
+  profile  Profile?
+  comments Comment[]
+
+  @@map("users")
+}
+
+model Profile {
+  id        Int     @id @default(autoincrement())
+  bio       String?
+  avatar    String?
+  firstName String? // Added for test compatibility
+  lastName  String? // Added for test compatibility
+  phone     String? // Added for test compatibility
+  address   String? // Added for test compatibility
+  city      String? // Added for test compatibility
+  country   String? // Added for test compatibility
+  website   String? // Added for test compatibility
+  userId    Int     @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  color       String? // Added for test compatibility
+  isActive    Boolean @default(true) // Added for test compatibility
+  posts       Post[]
+
+  @@map("categories")
+}
+
+model Post {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String?
+  excerpt     String?  // Added for test compatibility
+  slug        String?  // Added for test compatibility
+  published   Boolean  @default(false)
+  publishedAt DateTime? // Added for test compatibility
+  views       Int      @default(0)
+  viewCount   Int      @default(0) // Added for test compatibility
+  likes       Int      @default(0) // Added for test compatibility
+  rating      Float?   // Added for test compatibility
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Foreign keys
+  authorId   Int
+  categoryId Int?
+  
+  // Relationships
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+  tags     PostTag[]
+  comments Comment[]
+
+  @@map("posts")
+}
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  name  String    @unique
+  color String?   // Added for test compatibility
+  posts PostTag[]
+
+  @@map("tags")
+}
+
+model PostTag {
+  id     Int @id @default(autoincrement())
+  postId Int
+  tagId  Int
+  
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, tagId])
+  @@map("post_tags")
+}
+
+model Comment {
+  id      Int    @id @default(autoincrement())
+  content String
+  postId  Int
+  userId  Int
+  
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Settings {
+  id       Int     @id @default(autoincrement())
+  key      String  @unique
+  value    Json
+  category String? // Added for test compatibility
+  isPublic Boolean @default(false)
+
+  @@map("settings")
 }
 
 model TestRecord {

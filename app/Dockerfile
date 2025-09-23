@@ -4,12 +4,16 @@ FROM envoyproxy/envoy:v1.28-latest AS envoy-source
 # Minimal Ubuntu 20.04 base (same version as Envoy, but without all the extras)
 FROM ubuntu:20.04
 
+# Build argument for container version (can be passed during docker build)
+ARG NEON_LOCAL_CONTAINER_VERSION=dev
+
 USER root
 
 # Install only essential packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime dependencies
     python3 \
+    python3-pip \
     python3-requests \
     python3-yaml \
     openssl \
@@ -31,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Envoy binary from official image (avoid downloading/extracting)
 COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
 COPY --from=envoy-source /usr/local/bin/su-exec /usr/local/bin/su-exec
+
+# Install Python dependencies for WebSocket proxy
+RUN pip3 install --no-cache-dir websockets psycopg2-binary
 
 # Build PgBouncer from source and aggressively clean up
 RUN wget https://pgbouncer.github.io/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -O /tmp/pgbouncer.tar.gz \
@@ -96,22 +103,22 @@ RUN groupadd -f postgres || true \
     && echo "postgres ALL=(root) NOPASSWD: /bin/sed, /bin/sh" >> /etc/sudoers
 
 # PgBouncer config
-COPY /pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
-COPY /pgbouncer/pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
+COPY pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
+COPY pgbouncer/pgbouncer.ini.tmpl /scripts/app/pgbouncer.ini.tmpl
 
 # Envoy config template
-COPY /envoy/envoy.yaml.tmpl /scripts/app/envoy/envoy.yaml.tmpl
+COPY envoy/envoy.yaml.tmpl /scripts/app/envoy/envoy.yaml.tmpl
 
 # Application code
 COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
 COPY unified_manager.py /scripts/app/unified_manager.py
-COPY /pgbouncer/pgbouncer_manager.py /scripts/app/pgbouncer_manager.py
-COPY /envoy/envoy_manager.py /scripts/app/envoy_manager.py
+COPY wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
 COPY pgbouncer_wrapper.sh /usr/local/bin/pgbouncer_wrapper.sh
 RUN chmod +x /usr/local/bin/pgbouncer_wrapper.sh
 RUN touch /scripts/app/__init__.py
+RUN touch /scripts/app/wsproxy/__init__.py
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -119,6 +126,7 @@ ENV PYTHONPATH=/scripts
 ENV NEON_PROJECT_ID=""
 ENV BRANCH_ID=""
 ENV DELETE_BRANCH=true
+ENV NEON_LOCAL_CONTAINER_VERSION=${NEON_LOCAL_CONTAINER_VERSION}
 
 # Create a startup script that runs as root to modify /etc/hosts
 COPY startup.sh /usr/local/bin/startup.sh
@@ -127,8 +135,10 @@ RUN chmod +x /usr/local/bin/startup.sh
 # Create and set permissions for logs
 RUN touch /var/log/pgbouncer.log \
     && touch /var/log/envoy.log \
-    && chown postgres:postgres /var/log/pgbouncer.log /var/log/envoy.log \
-    && chmod 644 /var/log/pgbouncer.log /var/log/envoy.log
+    && touch /var/log/wsproxy.log \
+    && touch /var/log/custom_wsproxy.log \
+    && chown postgres:postgres /var/log/pgbouncer.log /var/log/envoy.log /var/log/wsproxy.log /var/log/custom_wsproxy.log \
+    && chmod 644 /var/log/pgbouncer.log /var/log/envoy.log /var/log/wsproxy.log /var/log/custom_wsproxy.log
 
 USER root
 WORKDIR /scripts

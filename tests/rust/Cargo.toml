@@ -1,0 +1,44 @@
+[package]
+name = "rust-neon-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "run_rust_tests"
+path = "run_rust_tests.rs"
+
+[[bin]]
+name = "test_rust_comprehensive"
+path = "test_rust_comprehensive.rs"
+
+[[bin]]
+name = "test_rust_advanced"
+path = "test_rust_advanced.rs"
+
+[[bin]]
+name = "test_rust_session_mode"
+path = "test_rust_session_mode.rs"
+
+[[bin]]
+name = "test_rust_orm_integration"
+path = "test_rust_orm_integration.rs"
+
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+colored = "2.1"
+futures = "0.3"
+deadpool-postgres = "0.12"
+bb8 = "0.8"
+bb8-postgres = "0.8"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"] }
+diesel = { version = "2.1", features = ["postgres", "chrono", "uuid", "serde_json"] }
+diesel-async = { version = "0.4", features = ["postgres", "deadpool"] }
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "chrono", "uuid", "with-json", "with-chrono"] }
