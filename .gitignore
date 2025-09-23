@@ -12,3 +12,7 @@ tests/java/target/
 
 # All target directories
 **/target/
+
+# Laravel test generated files
+tests/laravel/composer.lock
+tests/laravel/vendor/

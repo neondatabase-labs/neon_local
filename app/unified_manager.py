@@ -270,10 +270,23 @@ class UnifiedManager(ProcessManager):
 
         print(f"Databases: {databases}")
         
-        # Determine application name based on CLIENT environment variable
+        # Build version-aware application name and user agent
         client = os.getenv("CLIENT", "").lower()
-        app_name = "neon_local_vscode_container" if client == "vscode" else "neon_local_container"
-        user_agent_suffix = "_neon_local_vscode_container" if client == "vscode" else "_neon_local_container"
+        container_version = os.getenv("NEON_LOCAL_CONTAINER_VERSION", "unknown")
+        vscode_extension_version = os.getenv("NEON_LOCAL_VSCODE_EXTENSION_VERSION", "unknown")
+        
+        if client == "vscode" and vscode_extension_version != "unknown":
+            # Both container and extension versions
+            app_name = f"neon_local_vscode_container_{vscode_extension_version}_{container_version}"
+            user_agent_suffix = f"_neon-local-vscode-extension_{vscode_extension_version}_{container_version}"
+        elif client == "vscode":
+            # VSCode detected but no extension version provided
+            app_name = f"neon_local_vscode_container_unknown_{container_version}"
+            user_agent_suffix = f"_neon-local-vscode-extension_unknown_{container_version}"
+        else:
+            # Standalone container only
+            app_name = f"neon_local_container_{container_version}"
+            user_agent_suffix = f"_neon_local_container_{container_version}"
         
         # Define injection markers
         routes_marker = "              # Database-specific routes will be injected here"
@@ -377,36 +390,96 @@ class UnifiedManager(ProcessManager):
     circuit_breakers:
       thresholds:
       - priority: DEFAULT
-        max_connections: 5000    # Dramatically increased for concurrent HTTP tests (10x increase)
-        max_pending_requests: 5000 # Handle large concurrent request queues (10x increase)
-        max_requests: 25000      # Massive capacity for HTTP endpoint bursts (12.5x increase)
-        max_retries: 50          # Aggressive proxy-level retry policy (5x increase)
+        max_connections: 10000    # Further increased for concurrent HTTP tests (20x increase)
+        max_pending_requests: 10000 # Handle massive concurrent request queues (20x increase)
+        max_requests: 50000      # Even more capacity for HTTP endpoint bursts (25x increase)
+        max_retries: 100         # Very aggressive proxy-level retry policy (10x increase)
+        # Add retry budget to prevent retry storms
+        retry_budget:
+          budget_percent:
+            value: 25.0   # Allow up to 25% of requests to be retries
+          min_retry_concurrency: 10
       # Add HIGH priority threshold for critical requests
       - priority: HIGH
-        max_connections: 2500    # Reserved capacity for high-priority requests
-        max_pending_requests: 2500
-        max_requests: 12500
-        max_retries: 30
+        max_connections: 5000    # Reserved capacity for high-priority requests
+        max_pending_requests: 5000
+        max_requests: 25000
+        max_retries: 60
+        retry_budget:
+          budget_percent:
+            value: 20.0   # Slightly lower retry budget for high priority
+          min_retry_concurrency: 5
     # Use HTTP/1.1 to avoid HTTP/2 complexity issues
     # http2_protocol_options removed - let Envoy auto-negotiate
     # Enhanced connection pooling and management
     upstream_connection_options:
       tcp_keepalive:
         keepalive_probes: 9        # Increased from 3 for better connection health
-        keepalive_time: 600        # Increased from 300s (10 minutes)
-        keepalive_interval: 60     # Increased from 30s for more frequent checks
+        keepalive_time: 300        # Reduced to 5 minutes for faster detection
+        keepalive_interval: 30     # Reduced to 30s for more aggressive health checks
+    # Add socket options for better connection handling (at cluster level)
+    upstream_bind_config:
+      socket_options:
+      - level: 1      # SOL_SOCKET
+        name: 2       # SO_REUSEADDR
+        int_value: 1
+      - level: 6      # IPPROTO_TCP
+        name: 1       # TCP_NODELAY
+        int_value: 1
+      - level: 1      # SOL_SOCKET  
+        name: 15      # SO_REUSEPORT
+        int_value: 1
+    # Add connection pool settings for better resource management
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        common_http_protocol_options:
+          idle_timeout: 300s      # 5 minutes idle timeout
+          max_connection_duration: 3600s  # 1 hour max connection duration
+          max_headers_count: 100
+          max_stream_duration: 300s
+        # Add explicit HTTP/1.1 settings for better compatibility
+        explicit_http_config:
+          http_protocol_options:
+            accept_http_10: true
+            default_host_for_http_10: "localhost"
     # Simplified HTTP protocol options to avoid configuration errors
     # Focus on essential optimizations only
     # Add outlier detection to remove unhealthy backends automatically
     outlier_detection:
-      consecutive_5xx: 10         # Eject after 10 consecutive 5xx errors
-      consecutive_gateway_failure: 10  # Eject after 10 consecutive gateway failures
-      interval: 30s               # Check every 30 seconds
-      base_ejection_time: 30s     # Minimum ejection time
-      max_ejection_percent: 50    # Don't eject more than 50% of backends
+      consecutive_5xx: 20         # More lenient - eject after 20 consecutive 5xx errors
+      consecutive_gateway_failure: 15  # More lenient for gateway failures
+      interval: 10s               # Check more frequently - every 10 seconds
+      base_ejection_time: 10s     # Shorter minimum ejection time for faster recovery
+      max_ejection_percent: 30    # Don't eject more than 30% of backends
       split_external_local_origin_errors: true
       success_rate_minimum_hosts: 1
-      success_rate_request_volume: 10
+      success_rate_request_volume: 5  # Lower threshold for quicker detection
+    # Add health checking for proactive connection management
+    health_checks:
+    - timeout: 5s
+      interval: 10s
+      interval_jitter: 2s
+      unhealthy_threshold: 3
+      healthy_threshold: 2
+      # Use HTTP health check instead of TCP for better detection
+      http_health_check:
+        path: "/sql"
+        method: "POST"
+        request_headers_to_add:
+        - header:
+            key: "content-type"
+            value: "application/json"
+        expected_statuses:
+        - start: 200
+          end: 299
+        - start: 400
+          end: 499  # 4xx responses are also considered healthy (application-level errors)
+      # Allow health check failures during cold starts
+      no_traffic_interval: 30s
+      no_traffic_healthy_interval: 60s
+      unhealthy_interval: 30s
+      unhealthy_edge_interval: 15s
     transport_socket:
       name: envoy.transport_sockets.tls
       typed_config:

@@ -14,6 +14,9 @@ services:
       #BRANCH_ID: br-dark-bar-a440iizf
       #DELETE_BRANCH: < True | False >
       #DRIVER: < postgres | serverless >
+      # Version tracking for user agent strings
+      CLIENT: ${CLIENT:-}  # Set to "vscode" when run by VSCode extension
+      NEON_LOCAL_VSCODE_EXTENSION_VERSION: ${NEON_LOCAL_VSCODE_EXTENSION_VERSION:-}  # VSCode extension version
     #volumes:
     #  - ./.neon_local/:/tmp/.neon_local
     #  - ../.git/HEAD:/tmp/.git/HEAD:ro,consistent

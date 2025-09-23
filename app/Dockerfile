@@ -4,6 +4,9 @@ FROM envoyproxy/envoy:v1.28-latest AS envoy-source
 # Minimal Ubuntu 20.04 base (same version as Envoy, but without all the extras)
 FROM ubuntu:20.04
 
+# Build argument for container version (can be passed during docker build)
+ARG NEON_LOCAL_CONTAINER_VERSION=dev
+
 USER root
 
 # Install only essential packages
@@ -123,6 +126,7 @@ ENV PYTHONPATH=/scripts
 ENV NEON_PROJECT_ID=""
 ENV BRANCH_ID=""
 ENV DELETE_BRANCH=true
+ENV NEON_LOCAL_CONTAINER_VERSION=${NEON_LOCAL_CONTAINER_VERSION}
 
 # Create a startup script that runs as root to modify /etc/hosts
 COPY startup.sh /usr/local/bin/startup.sh
