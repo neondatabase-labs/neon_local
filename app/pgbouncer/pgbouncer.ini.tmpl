@@ -1,10 +1,10 @@
 [databases]
 # Transaction mode (default) - good for most applications and ORMs
-*=user={role} password={password} host={host} port=5432 dbname={database} pool_mode=transaction
+*=user={role} password={password} host={host} port={port} dbname={database} pool_mode=transaction
 
 # Session mode - for applications requiring session-specific features
 # Connect using database name with "_session" suffix (e.g., "neondb_session")
-*_session=user={role} password={password} host={host} port=5432 dbname={database} pool_mode=session 
+*_session=user={role} password={password} host={host} port={port} dbname={database} pool_mode=session 
 
 [pgbouncer]
 listen_addr = 0.0.0.0

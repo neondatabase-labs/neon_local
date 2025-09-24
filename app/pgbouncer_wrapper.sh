@@ -5,5 +5,5 @@
 export RES_OPTIONS="inet"
 export RESOLVE_SINGLE_REQUEST_REOPEN=1
 
-# Use unshare to create a network namespace with IPv4-only
-exec pgbouncer "$@"
+# Run PgBouncer as postgres user for security
+exec sudo -u postgres pgbouncer "$@"

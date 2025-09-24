@@ -2,10 +2,11 @@
 
 ## What is Neon Local?
 
-Neon Local is a proxy service that creates a local interface to your Neon cloud database. It supports two main use cases:
+Neon Local is a proxy service that creates a local interface to your Neon cloud database. It supports three main use cases:
 
 1. **Connecting to existing Neon branches** - Connect your app to any existing branch in your Neon project
 2. **Connecting to ephemeral Neon branches** - Connect your app to a new ephemeral database branch that is instantly created when the Neon Local container starts and deleted them when the container stops
+3. **Offline mode with local PostgreSQL** - Work completely offline with a local PostgreSQL instance that syncs with your remote Neon database
 
 Your application connects to a local Postgres endpoint, while Neon Local handles routing and authentication to the correct project and branch. This removes the need to update connection strings when working across database branches.
 
@@ -208,6 +209,57 @@ docker run \
   neondatabase/neon_local:latest
 ```
 
+## Offline Mode with Local PostgreSQL
+
+Neon Local now supports an offline mode that runs a local PostgreSQL instance inside the container. This allows you to work completely offline while maintaining the ability to sync data with your remote Neon database.
+
+### Enabling Offline Mode
+
+Set the `OFFLINE_MODE` environment variable to `true`:
+
+```yaml
+db:
+  image: neondatabase/neon_local:latest
+  ports:
+    - '5432:5432'
+  environment:
+    NEON_API_KEY: ${NEON_API_KEY}
+    NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+    BRANCH_ID: ${BRANCH_ID}  # or PARENT_BRANCH_ID
+    OFFLINE_MODE: true
+```
+
+### How Offline Mode Works
+
+1. **Initialization**: On first startup, Neon Local creates a local PostgreSQL instance and syncs your remote database schema and data
+2. **Local Development**: Your application connects to the local PostgreSQL instance (completely offline)
+3. **Sync Operations**: You can manually sync data between local and remote databases
+
+### Sync Commands
+
+Use the built-in sync CLI to manage data synchronization:
+
+```bash
+# Check sync status
+docker exec <container_name> python3 -m app.sync_cli status
+
+# Pull data from remote to local
+docker exec <container_name> python3 -m app.sync_cli pull
+
+# Push data from local to remote  
+docker exec <container_name> python3 -m app.sync_cli push
+
+# Initialize offline mode (if needed)
+docker exec <container_name> python3 -m app.sync_cli init
+```
+
+### Benefits of Offline Mode
+
+- **True offline development**: Work without internet connectivity
+- **Faster development**: No network latency for database operations
+- **Data isolation**: Local changes don't affect remote until you sync
+- **Flexible syncing**: Choose when to push/pull changes
+
 ## Environment variables and configuration options
 
 | Variable           | Description                                                                       | Required | Default                       |
@@ -216,6 +268,7 @@ docker run \
 | `NEON_PROJECT_ID`  | Your Neon project ID. Found under Project Settings → General in the Neon console. | Yes      | N/A                           |
 | `BRANCH_ID`        | Connect to an existing Neon branch. Mutually exclusive with `PARENT_BRANCH_ID`.   | No       | N/A                           |
 | `PARENT_BRANCH_ID` | Create ephemeral branch from parent. Mutually exclusive with `BRANCH_ID`.         | No       | your project's default branch |
+| `OFFLINE_MODE`     | Enable offline mode with local PostgreSQL. Set to `true` to enable.              | No       | `false`                       |
 | `DRIVER`           | **Deprecated** - Both drivers now supported simultaneously.                       | No       | N/A                           |
 | `DELETE_BRANCH`    | Set to `false` to persist branches after container shutdown.                      | No       | `true`                        |
 

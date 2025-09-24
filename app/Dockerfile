@@ -9,6 +9,10 @@ ARG NEON_LOCAL_CONTAINER_VERSION=dev
 
 USER root
 
+# Set timezone non-interactively
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
 # Install only essential packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime dependencies
@@ -18,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-yaml \
     openssl \
     postgresql-client \
+    postgresql-12 \
+    postgresql-server-dev-12 \
     sudo \
     libevent-2.1-7 \
     libc-ares2 \
@@ -30,13 +36,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libc-ares-dev \
     wget \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Envoy binary from official image (avoid downloading/extracting)
 COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
 COPY --from=envoy-source /usr/local/bin/su-exec /usr/local/bin/su-exec
 
-# Install Python dependencies for WebSocket proxy
+# Install Python dependencies for WebSocket proxy and offline mode
 RUN pip3 install --no-cache-dir websockets psycopg2-binary
 
 # Build PgBouncer from source and aggressively clean up
@@ -98,9 +105,11 @@ RUN echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
 # Create postgres user and set up directories
 RUN groupadd -f postgres || true \
     && useradd -g postgres postgres || true \
-    && mkdir -p /etc/pgbouncer /var/log /scripts/app \
-    && chown postgres:postgres /var/log /etc/pgbouncer \
-    && echo "postgres ALL=(root) NOPASSWD: /bin/sed, /bin/sh" >> /etc/sudoers
+    && mkdir -p /etc/pgbouncer /var/log /scripts/app /var/lib/postgresql/data /var/run/postgresql \
+    && chown postgres:postgres /var/log /etc/pgbouncer /var/lib/postgresql/data /var/run/postgresql \
+    && echo "postgres ALL=(postgres) NOPASSWD: /bin/sed, /bin/sh, /usr/bin/pg_ctl, /usr/lib/postgresql/*/bin/initdb, /usr/lib/postgresql/*/bin/pg_ctl, /usr/local/bin/pgbouncer" >> /etc/sudoers \
+    && echo "postgres ALL=(root) NOPASSWD: /bin/sed, /bin/sh, /usr/bin/pg_ctl, /usr/lib/postgresql/*/bin/initdb, /usr/lib/postgresql/*/bin/pg_ctl" >> /etc/sudoers \
+    && echo "root ALL=(postgres) NOPASSWD: /usr/local/bin/pgbouncer" >> /etc/sudoers
 
 # PgBouncer config
 COPY pgbouncer/userlist.txt /etc/pgbouncer/userlist.txt
@@ -114,6 +123,8 @@ COPY entrypoint.py /scripts/app/entrypoint.py
 COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
 COPY unified_manager.py /scripts/app/unified_manager.py
+COPY offline_manager.py /scripts/app/offline_manager.py
+COPY sync_cli.py /scripts/app/sync_cli.py
 COPY wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
 COPY pgbouncer_wrapper.sh /usr/local/bin/pgbouncer_wrapper.sh
 RUN chmod +x /usr/local/bin/pgbouncer_wrapper.sh
@@ -126,6 +137,7 @@ ENV PYTHONPATH=/scripts
 ENV NEON_PROJECT_ID=""
 ENV BRANCH_ID=""
 ENV DELETE_BRANCH=true
+ENV OFFLINE_MODE=false
 ENV NEON_LOCAL_CONTAINER_VERSION=${NEON_LOCAL_CONTAINER_VERSION}
 
 # Create a startup script that runs as root to modify /etc/hosts

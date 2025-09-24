@@ -9,6 +9,7 @@ import requests
 import logging
 from app.process_manager import ProcessManager
 from app.neon import NeonAPI
+from app.offline_manager import OfflineManager
 
 class UnifiedManager(ProcessManager):
     def __init__(self):
@@ -17,6 +18,7 @@ class UnifiedManager(ProcessManager):
         self.pgbouncer_process = None
         self.wsproxy_process = None
         self.neon_api = NeonAPI()
+        self.offline_manager = OfflineManager()
         self.cert_path = "/etc/pgbouncer/server.crt"
         self.key_path = "/etc/pgbouncer/server.key"
         self.connection_monitor_thread = None
@@ -59,7 +61,8 @@ class UnifiedManager(ProcessManager):
             "-out", self.cert_path
         ], check=True)
         
-        # Set proper permissions
+        # Set proper permissions and ownership for postgres user
+        subprocess.run(["chown", "postgres:postgres", self.cert_path, self.key_path], check=False)
         os.chmod(self.key_path, 0o600)
         os.chmod(self.cert_path, 0o644)
         
@@ -70,35 +73,92 @@ class UnifiedManager(ProcessManager):
         self._generate_certificates()
         params = None
         
-        if self.branch_id:
-            try:
-                params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
-            except Exception as e:
-                print(f"Debug: Error getting connection info: {str(e)}")
-                raise
-        elif self.parent_branch_id:
-            state = self._get_neon_branch()
-            current_branch = self._get_git_branch()
-            parent = os.getenv("PARENT_BRANCH_ID")
-            if parent == "":
-                parent = None
-            params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent, self.vscode)
-            self._write_neon_branch(updated_state)
-
+        # Handle offline mode first
+        if self.offline_manager.is_offline_mode():
+            print("Offline mode enabled - setting up local PostgreSQL...")
+            
+            # First, get remote connection info for initial sync
+            remote_params = None
+            if self.branch_id:
+                try:
+                    remote_params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
+                    print(f"Retrieved remote database info for branch {self.branch_id}")
+                except Exception as e:
+                    print(f"Warning: Could not get remote connection info: {e}")
+                    print("Continuing with offline mode without initial sync...")
+            
+            # Initialize and start local PostgreSQL
+            if not self.offline_manager.init_local_postgres():
+                raise ValueError("Failed to initialize local PostgreSQL")
+            
+            if not self.offline_manager.start_local_postgres():
+                raise ValueError("Failed to start local PostgreSQL")
+            
+            # Perform initial sync from remote if we have connection info
+            if remote_params:
+                print("Performing initial sync from remote Neon branch...")
+                if self.offline_manager.sync_from_remote(remote_params):
+                    print("✓ Initial sync completed successfully")
+                else:
+                    print("⚠️  Initial sync failed, continuing with empty local database")
+            
+            # Configure all databases from remote params, or create default
+            if remote_params and len(remote_params) > 0:
+                params = []
+                for db in remote_params:
+                    params.append({
+                        'host': 'localhost',
+                        'port': self.offline_manager.local_port,
+                        'database': db['database'],
+                        'user': db['user'], 
+                        'password': db['password'],
+                        'ssl_required': False
+                    })
+                print(f"Configured {len(params)} databases for offline mode")
+            else:
+                # Fallback to default database
+                params = [{
+                    'host': 'localhost',
+                    'port': self.offline_manager.local_port,
+                    'database': 'neondb',
+                    'user': 'neondb_owner',
+                    'password': 'local_password',
+                    'ssl_required': False
+                }]
+            
+            print("Local PostgreSQL ready for connections")
         else:
-            state = self._get_neon_branch()
-            current_branch = self._get_git_branch()
-            params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, vscode=self.vscode)
-            self._write_neon_branch(updated_state)
+            # Get remote connection info for online mode
+            if self.branch_id:
+                try:
+                    params = self.neon_api.get_branch_connection_info(self.project_id, self.branch_id)
+                except Exception as e:
+                    print(f"Debug: Error getting connection info: {str(e)}")
+                    raise
+            elif self.parent_branch_id:
+                state = self._get_neon_branch()
+                current_branch = self._get_git_branch()
+                parent = os.getenv("PARENT_BRANCH_ID")
+                if parent == "":
+                    parent = None
+                params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, parent, self.vscode)
+                self._write_neon_branch(updated_state)
+
+            else:
+                state = self._get_neon_branch()
+                current_branch = self._get_git_branch()
+                params, updated_state = self.neon_api.fetch_or_create_branch(state, current_branch, vscode=self.vscode)
+                self._write_neon_branch(updated_state)
+            
+            if params is None:
+                raise ValueError("Failed to get connection parameters")
         
-        if params is None:
-            raise ValueError("Failed to get connection parameters")
-        
-        # Store params for use in start_process
+        # Store params for sync operations and configuration
+        self.remote_database_params = params if not self.offline_manager.is_offline_mode() else None
         self.database_params = params
         
-        self._write_pgbouncer_config(params)
-        self._write_envoy_config(params)
+        self._write_pgbouncer_config(self.database_params)
+        self._write_envoy_config(self.database_params)
 
     def start_process(self):
         self.prepare_config()
@@ -211,6 +271,11 @@ class UnifiedManager(ProcessManager):
                 self.pgbouncer_process.kill()
                 self.pgbouncer_process.wait()
             self.pgbouncer_process = None
+        
+        # Finally stop local PostgreSQL if in offline mode
+        if self.offline_manager.is_offline_mode():
+            print("Stopping local PostgreSQL...")
+            self.offline_manager.stop_local_postgres()
 
     def _write_pgbouncer_config(self, databases):
         with open("/scripts/app/pgbouncer.ini.tmpl", "r") as file:
@@ -229,6 +294,7 @@ class UnifiedManager(ProcessManager):
             config = template.replace("{role}", first_db['user'])
             config = config.replace("{password}", first_db['password'])
             config = config.replace("{host}", host)
+            config = config.replace("{port}", str(first_db['port']))
             config = config.replace("{database}", first_db['database'])
             config = config.replace("application_name=neon_local_container", f"application_name={app_name}")
             
@@ -236,11 +302,11 @@ class UnifiedManager(ProcessManager):
             database_entries = []
             for db in databases:
                 # Transaction mode entry (explicit)
-                transaction_entry = f"{db['database']}=user={db['user']} password={db['password']} host={db['host']} port=5432 dbname={db['database']} application_name={app_name}"
+                transaction_entry = f"{db['database']}=user={db['user']} password={db['password']} host={db['host']} port={db['port']} dbname={db['database']} application_name={app_name}"
                 database_entries.append(transaction_entry)
                 
                 # Session mode entry (explicit with _session suffix)
-                session_entry = f"{db['database']}_session=user={db['user']} password={db['password']} host={db['host']} port=5432 dbname={db['database']} pool_mode=session application_name={app_name}"
+                session_entry = f"{db['database']}_session=user={db['user']} password={db['password']} host={db['host']} port={db['port']} dbname={db['database']} pool_mode=session application_name={app_name}"
                 database_entries.append(session_entry)
             
             # Insert specific database entries at the beginning of the [databases] section
@@ -253,6 +319,10 @@ class UnifiedManager(ProcessManager):
             
             # Modify pgbouncer section to listen on port 6432 (internal port)
             config = config.replace("listen_port = 5432", "listen_port = 6432")
+            
+            # For offline mode, disable SSL for server connections to local PostgreSQL
+            if self.offline_manager.is_offline_mode():
+                config = config.replace("server_tls_sslmode = verify-full", "server_tls_sslmode = disable")
         else:
             # Fallback if no databases provided
             config = template.replace("listen_port = 5432", "listen_port = 6432")
@@ -987,3 +1057,33 @@ class UnifiedManager(ProcessManager):
         except Exception as e:
             logging.error(f"PgBouncer force restart failed: {e}")
             return False
+    
+    def sync_from_remote(self):
+        """Manually sync data from remote to local database."""
+        if not self.offline_manager.is_offline_mode():
+            print("Not in offline mode - sync not available")
+            return False
+            
+        if not hasattr(self, 'remote_database_params'):
+            print("No remote database parameters available")
+            return False
+        
+        print("Starting manual sync from remote...")
+        return self.offline_manager.sync_from_remote(self.remote_database_params)
+    
+    def sync_to_remote(self):
+        """Manually sync data from local to remote database."""
+        if not self.offline_manager.is_offline_mode():
+            print("Not in offline mode - sync not available")
+            return False
+            
+        if not hasattr(self, 'remote_database_params'):
+            print("No remote database parameters available")
+            return False
+        
+        print("Starting manual sync to remote...")
+        return self.offline_manager.sync_to_remote(self.remote_database_params)
+    
+    def get_sync_status(self):
+        """Get current sync status."""
+        return self.offline_manager.get_sync_status()

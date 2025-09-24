@@ -6,14 +6,16 @@ services:
     # Uncomment the line below for local development
     build: app/
     ports:
-      - "5432:5432"
+      - "5432:5432"  # Map external 5432 to internal Envoy port 5432
     environment:
       NEON_API_KEY: ${NEON_API_KEY}
       NEON_PROJECT_ID: ${NEON_PROJECT_ID}
       PARENT_BRANCH_ID: ${PARENT_BRANCH_ID}
-      #BRANCH_ID: br-dark-bar-a440iizf
+      OFFLINE_MODE: ${OFFLINE_MODE:-false}  # Enable offline mode with local PostgreSQL
+      BRANCH_ID: br-wispy-darkness-a5d1elev
       #DELETE_BRANCH: < True | False >
       #DRIVER: < postgres | serverless >
+      #OFFLINE_MODE: true  # Enable offline mode with local PostgreSQL
       # Version tracking for user agent strings
       CLIENT: ${CLIENT:-}  # Set to "vscode" when run by VSCode extension
       NEON_LOCAL_VSCODE_EXTENSION_VERSION: ${NEON_LOCAL_VSCODE_EXTENSION_VERSION:-}  # VSCode extension version
