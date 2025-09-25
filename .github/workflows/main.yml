@@ -23,7 +23,9 @@ on:
 
 jobs:
   ghcr-push:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: neondatabase-labs-protected-runner-group
+      labels: linux-ubuntu-latest
 
     steps:
       - name: Checkout Repository
@@ -112,7 +114,9 @@ jobs:
   dockerhub-push:
     needs: ghcr-push
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) || (github.event.inputs.create_release == 'true' && github.event.inputs.version != '')
-    runs-on: ubuntu-latest
+    runs-on:
+      group: neondatabase-labs-protected-runner-group
+      labels: linux-ubuntu-latest
 
     steps:
       - name: Checkout Repository
