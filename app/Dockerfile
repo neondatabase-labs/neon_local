@@ -1,8 +1,8 @@
 # Multi-stage: Extract Envoy, then use minimal Ubuntu base (half the size of full Envoy image)
 FROM envoyproxy/envoy:v1.28-latest AS envoy-source
 
-# Minimal Ubuntu 20.04 base (same version as Envoy, but without all the extras)
-FROM ubuntu:20.04
+# Ubuntu 25.04 base for newer libpq with better SNI support
+FROM ubuntu:25.04
 
 # Build argument for container version (can be passed during docker build)
 ARG NEON_LOCAL_CONTAINER_VERSION=dev
@@ -22,13 +22,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-yaml \
     openssl \
     postgresql-client \
-    postgresql-12 \
-    postgresql-server-dev-12 \
+    postgresql \
+    postgresql-server-dev-all \
+    postgresql-plperl \
     sudo \
     libevent-2.1-7 \
     libc-ares2 \
-    libssl1.1 \
+    libssl3t64 \
     ca-certificates \
+    # Bucardo dependencies
+    libdbi-perl \
+    libdbd-pg-perl \
+    libboolean-perl \
+    libdbix-safe-perl \
     # Build dependencies (will be removed)
     build-essential \
     libevent-dev \
@@ -43,8 +49,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=envoy-source /usr/local/bin/envoy /usr/local/bin/envoy
 COPY --from=envoy-source /usr/local/bin/su-exec /usr/local/bin/su-exec
 
+# Install Bucardo
+RUN wget https://bucardo.org/downloads/Bucardo-5.6.0.tar.gz -O /tmp/bucardo.tar.gz \
+    && cd /tmp && tar -xzf bucardo.tar.gz \
+    && cd Bucardo-5.6.0 \
+    && perl Makefile.PL \
+    && make && make install \
+    && cd / && rm -rf /tmp/bucardo*
+
 # Install Python dependencies for WebSocket proxy and offline mode
-RUN pip3 install --no-cache-dir websockets psycopg2-binary
+RUN pip3 install --no-cache-dir --break-system-packages websockets psycopg2-binary
 
 # Build PgBouncer from source and aggressively clean up
 RUN wget https://pgbouncer.github.io/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -O /tmp/pgbouncer.tar.gz \
@@ -105,8 +119,8 @@ RUN echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
 # Create postgres user and set up directories
 RUN groupadd -f postgres || true \
     && useradd -g postgres postgres || true \
-    && mkdir -p /etc/pgbouncer /var/log /scripts/app /var/lib/postgresql/data /var/run/postgresql \
-    && chown postgres:postgres /var/log /etc/pgbouncer /var/lib/postgresql/data /var/run/postgresql \
+    && mkdir -p /etc/pgbouncer /var/log /scripts/app /var/lib/postgresql/data /var/run/postgresql /var/run/bucardo /tmp/bucardo \
+    && chown postgres:postgres /var/log /etc/pgbouncer /var/lib/postgresql/data /var/run/postgresql /var/run/bucardo /tmp/bucardo \
     && echo "postgres ALL=(postgres) NOPASSWD: /bin/sed, /bin/sh, /usr/bin/pg_ctl, /usr/lib/postgresql/*/bin/initdb, /usr/lib/postgresql/*/bin/pg_ctl, /usr/local/bin/pgbouncer" >> /etc/sudoers \
     && echo "postgres ALL=(root) NOPASSWD: /bin/sed, /bin/sh, /usr/bin/pg_ctl, /usr/lib/postgresql/*/bin/initdb, /usr/lib/postgresql/*/bin/pg_ctl" >> /etc/sudoers \
     && echo "root ALL=(postgres) NOPASSWD: /usr/local/bin/pgbouncer" >> /etc/sudoers
@@ -124,6 +138,7 @@ COPY process_manager.py /scripts/app/process_manager.py
 COPY neon.py /scripts/app/neon.py
 COPY unified_manager.py /scripts/app/unified_manager.py
 COPY offline_manager.py /scripts/app/offline_manager.py
+COPY bucardo_manager.py /scripts/app/bucardo_manager.py
 COPY sync_cli.py /scripts/app/sync_cli.py
 COPY wsproxy/neon_wsproxy_manager.py /scripts/app/wsproxy/neon_wsproxy_manager.py
 COPY pgbouncer_wrapper.sh /usr/local/bin/pgbouncer_wrapper.sh

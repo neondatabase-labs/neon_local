@@ -97,7 +97,7 @@ class UnifiedManager(ProcessManager):
             # Perform initial sync from remote if we have connection info
             if remote_params:
                 print("Performing initial sync from remote Neon branch...")
-                if self.offline_manager.sync_from_remote(remote_params):
+                if self.offline_manager.sync_from_remote_initial(remote_params):
                     print("✓ Initial sync completed successfully")
                 else:
                     print("⚠️  Initial sync failed, continuing with empty local database")

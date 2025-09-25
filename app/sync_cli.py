@@ -63,26 +63,18 @@ def cmd_pull(args):
         return 1
 
 def cmd_push(args):
-    """Push data from local to remote database."""
+    """Push data from local to remote database - NOT SUPPORTED."""
     if not os.getenv("OFFLINE_MODE", "false").lower() == "true":
         print("Error: Not in offline mode. Set OFFLINE_MODE=true to use sync commands.")
         return 1
     
-    print("Syncing data from local to remote database...")
-    
-    offline_manager = OfflineManager()
-    remote_info = get_remote_connection_info()
-    
-    if not remote_info:
-        print("Error: Could not get remote connection information")
-        return 1
-    
-    if offline_manager.sync_to_remote(remote_info):
-        print("✓ Sync to remote completed successfully")
-        return 0
-    else:
-        print("✗ Sync to remote failed")
-        return 1
+    print("❌ Push operations (local to remote) are not supported")
+    print("🔒 Neon databases don't provide superuser privileges required for Bucardo push operations")
+    print("💡 Use 'pull' command to sync changes from remote to local instead")
+    print("")
+    print("📖 For bi-directional sync, make changes directly in the remote Neon database")
+    print("   and use 'pull' to sync them to your local development environment")
+    return 1
 
 def cmd_status(args):
     """Show sync status."""
@@ -94,6 +86,10 @@ def cmd_status(args):
         return 0
     
     print("Offline mode: Enabled")
+    
+    # Check if Bucardo daemon is running
+    bucardo_running = offline_manager.bucardo_manager._is_bucardo_running()
+    print(f"Continuous sync: {'Active (preventing remote auto-suspend)' if bucardo_running else 'Paused (allowing remote auto-suspend)'}")
     
     status = offline_manager.get_sync_status()
     
@@ -112,6 +108,42 @@ def cmd_status(args):
             print(f"Error: {status.get('error')}")
     
     return 0
+
+def cmd_pause(args):
+    """Pause continuous sync to allow remote database auto-suspend."""
+    if not os.getenv("OFFLINE_MODE", "false").lower() == "true":
+        print("Error: Not in offline mode. Set OFFLINE_MODE=true to use sync commands.")
+        return 1
+    
+    print("Pausing continuous sync to allow remote database auto-suspend...")
+    
+    offline_manager = OfflineManager()
+    
+    if offline_manager.bucardo_manager.pause_continuous_sync():
+        print("✓ Continuous sync paused - remote database can now auto-suspend")
+        print("  Use 'resume' command to restart continuous sync")
+        return 0
+    else:
+        print("✗ Failed to pause continuous sync")
+        return 1
+
+def cmd_resume(args):
+    """Resume continuous sync."""
+    if not os.getenv("OFFLINE_MODE", "false").lower() == "true":
+        print("Error: Not in offline mode. Set OFFLINE_MODE=true to use sync commands.")
+        return 1
+    
+    print("Resuming continuous sync...")
+    
+    offline_manager = OfflineManager()
+    
+    if offline_manager.bucardo_manager.resume_continuous_sync():
+        print("✓ Continuous sync resumed")
+        print("  Note: This will prevent remote database auto-suspend")
+        return 0
+    else:
+        print("✗ Failed to resume continuous sync")
+        return 1
 
 def cmd_init(args):
     """Initialize offline mode (setup local PostgreSQL)."""
@@ -169,6 +201,14 @@ def main():
     # Status command
     status_parser = subparsers.add_parser("status", help="Show sync status")
     status_parser.set_defaults(func=cmd_status)
+    
+    # Pause command
+    pause_parser = subparsers.add_parser("pause", help="Pause continuous sync to allow remote auto-suspend")
+    pause_parser.set_defaults(func=cmd_pause)
+    
+    # Resume command
+    resume_parser = subparsers.add_parser("resume", help="Resume continuous sync")
+    resume_parser.set_defaults(func=cmd_resume)
     
     # Init command
     init_parser = subparsers.add_parser("init", help="Initialize offline mode")
