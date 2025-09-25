@@ -272,7 +272,7 @@ class UnifiedManager(ProcessManager):
         
         # Build version-aware application name and user agent
         client = os.getenv("CLIENT", "").lower()
-        container_version = os.getenv("NEON_LOCAL_CONTAINER_VERSION", "unknown")
+        container_version = "nl_v1.5"
         vscode_extension_version = os.getenv("NEON_LOCAL_VSCODE_EXTENSION_VERSION", "unknown")
         
         if client == "vscode" and vscode_extension_version != "unknown":

@@ -22,7 +22,7 @@ class NeonAPI:
     def _build_user_agent(self):
         """Build user agent string with container and extension version information."""
         # Get container version from environment variable or default
-        container_version = os.getenv("NEON_LOCAL_CONTAINER_VERSION", "unknown")
+        container_version = "nl_v1.5"
         
         # Get VSCode extension version if running via VSCode
         client = os.getenv("CLIENT", "").lower()
