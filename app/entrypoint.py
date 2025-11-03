@@ -26,11 +26,16 @@ def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
+    # Get the correct HEAD path (works for both regular repos and worktrees)
+    head_path = manager.get_git_head_path()
+    
     manager.reloader_thread = threading.Thread(target=manager.start_reloader_loop)
-    manager.watcher_thread = threading.Thread(target=manager.watch_file_changes, args=("/tmp/.git/HEAD",))
+    manager.watcher_thread = threading.Thread(target=manager.watch_file_changes, args=(head_path,))
+    manager.branch_deletion_thread = threading.Thread(target=manager.watch_branch_deletions)
 
     manager.reloader_thread.start()
     manager.watcher_thread.start()
+    manager.branch_deletion_thread.start()
 
     manager.reloader_thread.join()
 
